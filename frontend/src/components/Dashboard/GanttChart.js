@@ -6,20 +6,20 @@ const GanttChart = ({ cityId }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const params = cityId ? { city_id: cityId } : {};
+        const response = await client.get('/dashboard/gantt-data', { params });
+        setData(response.data);
+      } catch (error) {
+        console.error('Error fetching gantt data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
     fetchData();
   }, [cityId]);
-
-  const fetchData = async () => {
-    try {
-      const params = cityId ? { city_id: cityId } : {};
-      const response = await client.get('/dashboard/gantt-data', { params });
-      setData(response.data);
-    } catch (error) {
-      console.error('Error fetching gantt data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const getColor = (type) => {
     const colors = {

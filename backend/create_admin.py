@@ -7,17 +7,24 @@ models.Base.metadata.create_all(bind=engine)
 # Create admin user
 db = SessionLocal()
 
-admin_user = models.User(
-    username="admin",
-    email="admin@construction.com",
-    hashed_password=auth.get_password_hash("admin123"),
-    role="admin"
-)
+# Check if admin already exists
+existing_admin = db.query(models.User).filter(models.User.username == "admin").first()
+if existing_admin:
+    print("Admin user already exists!")
+else:
+    admin_user = models.User(
+        username="admin",
+        email="admin@construction.com",
+        hashed_password=auth.get_password_hash("admin123"),
+        role="admin"
+    )
+    
+    db.add(admin_user)
+    db.commit()
+    
+    print("Admin user created successfully!")
+    print("Username: admin")
+    print("Password: admin123")
+    print("\nПожалуйста, смените пароль после первого входа!")
 
-db.add(admin_user)
-db.commit()
 db.close()
-
-print("Admin user created successfully!")
-print("Username: admin")
-print("Password: admin123")

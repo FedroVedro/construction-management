@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import client from '../../api/client';
 
 const MasterCard = ({ cityId }) => {
@@ -7,20 +7,20 @@ const MasterCard = ({ cityId }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const params = cityId ? { city_id: cityId } : {};
+        const response = await client.get('/dashboard/master-card', { params });
+        setData(response.data);
+      } catch (error) {
+        console.error('Error fetching master card data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
     fetchData();
   }, [cityId]);
-
-  const fetchData = async () => {
-    try {
-      const params = cityId ? { city_id: cityId } : {};
-      const response = await client.get('/dashboard/master-card', { params });
-      setData(response.data);
-    } catch (error) {
-      console.error('Error fetching master card data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   if (loading) return <div>Загрузка...</div>;
   if (!data) return <div>Нет данных</div>;
