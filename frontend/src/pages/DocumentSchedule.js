@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import CalendarGanttChart from '../components/Dashboard/CalendarGanttChart';
 
 const DocumentSchedule = () => {
   const [schedules, setSchedules] = useState([]);
@@ -8,6 +9,7 @@ const DocumentSchedule = () => {
   const [selectedCity, setSelectedCity] = useState(null);
   const [editingCell, setEditingCell] = useState(null);
   const [tempValue, setTempValue] = useState('');
+  const [showCalendar, setShowCalendar] = useState(false);
   const { user } = useAuth();
 
   const canEdit = user?.role !== 'director' && 
@@ -273,111 +275,137 @@ const DocumentSchedule = () => {
       <div style={{ 
         display: 'flex', 
         borderBottom: '2px solid #dee2e6',
-        marginBottom: '20px'
+        marginBottom: '20px',
+        alignItems: 'center',
+        justifyContent: 'space-between'
       }}>
-        {cities.map(city => (
-          <button
-            key={city.id}
-            onClick={() => setSelectedCity(city.id)}
-            style={{
-              padding: '10px 20px',
-              border: 'none',
-              borderBottom: selectedCity === city.id ? '2px solid #007bff' : 'none',
-              backgroundColor: selectedCity === city.id ? '#f8f9fa' : 'transparent',
-              color: selectedCity === city.id ? '#007bff' : '#6c757d',
-              fontWeight: selectedCity === city.id ? 'bold' : 'normal',
-              cursor: 'pointer',
-              transition: 'all 0.3s'
-            }}
-          >
-            {city.name}
-          </button>
-        ))}
-      </div>
-
-      {/* Excel-подобная таблица */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto' }}>
-          <table className="table" style={{ marginBottom: 0 }}>
-            <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8f9fa', zIndex: 10 }}>
-              <tr>
-                <th style={{ width: '50px' }}>№</th>
-                <th style={{ minWidth: '200px' }}>Этап строительства</th>
-                <th style={{ minWidth: '300px' }}>Разделы</th>
-                <th style={{ minWidth: '140px' }}>План начало</th>
-                <th style={{ minWidth: '140px' }}>План конец</th>
-                <th style={{ minWidth: '140px' }}>Факт начало</th>
-                <th style={{ minWidth: '140px' }}>Факт конец</th>
-                {canEdit && <th style={{ width: '80px' }}>Действия</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {schedules.map((schedule, index) => (
-                <tr key={schedule.id} style={{ 
-                  backgroundColor: schedule.isNew ? '#e8f5e9' : 'transparent',
-                  transition: 'background-color 0.3s'
-                }}>
-                  <td style={{ textAlign: 'center' }}>
-                    {schedule.isNew ? '★' : index + 1}
-                  </td>
-                  <td>{renderCell(schedule, 'construction_stage', schedule.construction_stage)}</td>
-                  <td>{renderCell(schedule, 'sections', schedule.sections)}</td>
-                  <td>{renderCell(schedule, 'planned_start_date', schedule.planned_start_date)}</td>
-                  <td>{renderCell(schedule, 'planned_end_date', schedule.planned_end_date)}</td>
-                  <td>{renderCell(schedule, 'actual_start_date', schedule.actual_start_date)}</td>
-                  <td>{renderCell(schedule, 'actual_end_date', schedule.actual_end_date)}</td>
-                  {canEdit && (
-                    <td style={{ textAlign: 'center' }}>
-                      <button
-                        onClick={() => deleteRow(schedule.id)}
-                        className="btn btn-danger btn-sm"
-                        style={{ padding: '2px 8px' }}
-                      >
-                        ✕
-                      </button>
-                    </td>
-                  )}
-                </tr>
-              ))}
-              {canEdit && schedules.length === 0 && (
-                <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '20px', color: '#6c757d' }}>
-                    Нет данных. Нажмите "Добавить строку" для начала работы.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div style={{ display: 'flex' }}>
+          {cities.map(city => (
+            <button
+              key={city.id}
+              onClick={() => setSelectedCity(city.id)}
+              style={{
+                padding: '10px 20px',
+                border: 'none',
+                borderBottom: selectedCity === city.id ? '2px solid #007bff' : 'none',
+                backgroundColor: selectedCity === city.id ? '#f8f9fa' : 'transparent',
+                color: selectedCity === city.id ? '#007bff' : '#6c757d',
+                fontWeight: selectedCity === city.id ? 'bold' : 'normal',
+                cursor: 'pointer',
+                transition: 'all 0.3s'
+              }}
+            >
+              {city.name}
+            </button>
+          ))}
         </div>
         
-        {canEdit && (
-          <div style={{ 
-            padding: '10px', 
-            backgroundColor: '#f8f9fa',
-            borderTop: '1px solid #dee2e6',
-            textAlign: 'center'
-          }}>
-            <button 
-              onClick={addNewRow}
-              className="btn btn-primary"
-            >
-              + Добавить строку
-            </button>
-          </div>
-        )}
+        {/* Кнопка переключения вида */}
+        <button
+          onClick={() => setShowCalendar(!showCalendar)}
+          className="btn btn-secondary"
+          style={{ marginRight: '20px' }}
+        >
+          {showCalendar ? '📊 Табличный вид' : '📅 Календарный вид'}
+        </button>
       </div>
 
-      {!canEdit && (
-        <div style={{ 
-          marginTop: '10px', 
-          padding: '10px', 
-          backgroundColor: '#f8f9fa',
-          borderRadius: '4px',
-          color: '#6c757d',
-          fontSize: '14px'
-        }}>
-          <i>Режим просмотра. У вас нет прав для редактирования этого графика.</i>
+      {/* Показываем либо таблицу, либо календарь */}
+      {showCalendar ? (
+        <div className="card">
+          <CalendarGanttChart 
+            schedules={schedules} 
+            cities={cities}
+            selectedView="document"
+          />
         </div>
+      ) : (
+        <>
+          {/* Excel-подобная таблица */}
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="table" style={{ marginBottom: 0 }}>
+                <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8f9fa', zIndex: 10 }}>
+                  <tr>
+                    <th style={{ width: '50px' }}>№</th>
+                    <th style={{ minWidth: '200px' }}>Этап строительства</th>
+                    <th style={{ minWidth: '300px' }}>Разделы</th>
+                    <th style={{ minWidth: '140px' }}>План начало</th>
+                    <th style={{ minWidth: '140px' }}>План конец</th>
+                    <th style={{ minWidth: '140px' }}>Факт начало</th>
+                    <th style={{ minWidth: '140px' }}>Факт конец</th>
+                    {canEdit && <th style={{ width: '80px' }}>Действия</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {schedules.map((schedule, index) => (
+                    <tr key={schedule.id} style={{ 
+                      backgroundColor: schedule.isNew ? '#e8f5e9' : 'transparent',
+                      transition: 'background-color 0.3s'
+                    }}>
+                      <td style={{ textAlign: 'center' }}>
+                        {schedule.isNew ? '★' : index + 1}
+                      </td>
+                      <td>{renderCell(schedule, 'construction_stage', schedule.construction_stage)}</td>
+                      <td>{renderCell(schedule, 'sections', schedule.sections)}</td>
+                      <td>{renderCell(schedule, 'planned_start_date', schedule.planned_start_date)}</td>
+                      <td>{renderCell(schedule, 'planned_end_date', schedule.planned_end_date)}</td>
+                      <td>{renderCell(schedule, 'actual_start_date', schedule.actual_start_date)}</td>
+                      <td>{renderCell(schedule, 'actual_end_date', schedule.actual_end_date)}</td>
+                      {canEdit && (
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            onClick={() => deleteRow(schedule.id)}
+                            className="btn btn-danger btn-sm"
+                            style={{ padding: '2px 8px' }}
+                          >
+                            ✕
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                  {canEdit && schedules.length === 0 && (
+                    <tr>
+                      <td colSpan={8} style={{ textAlign: 'center', padding: '20px', color: '#6c757d' }}>
+                        Нет данных. Нажмите "Добавить строку" для начала работы.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            
+            {canEdit && (
+              <div style={{ 
+                padding: '10px', 
+                backgroundColor: '#f8f9fa',
+                borderTop: '1px solid #dee2e6',
+                textAlign: 'center'
+              }}>
+                <button 
+                  onClick={addNewRow}
+                  className="btn btn-primary"
+                >
+                  + Добавить строку
+                </button>
+              </div>
+            )}
+          </div>
+
+          {!canEdit && (
+            <div style={{ 
+              marginTop: '10px', 
+              padding: '10px', 
+              backgroundColor: '#f8f9fa',
+              borderRadius: '4px',
+              color: '#6c757d',
+              fontSize: '14px'
+            }}>
+              <i>Режим просмотра. У вас нет прав для редактирования этого графика.</i>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

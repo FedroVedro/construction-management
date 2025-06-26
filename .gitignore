@@ -6249,3 +6249,17 @@ backend/venv/Lib/site-packages/~ip-22.0.4.dist-info/RECORD
 backend/venv/Lib/site-packages/~ip-22.0.4.dist-info/REQUESTED
 backend/venv/Lib/site-packages/~ip-22.0.4.dist-info/top_level.txt
 backend/venv/Lib/site-packages/~ip-22.0.4.dist-info/WHEEL
+backend/app/routers/__pycache__/__init__.cpython-310.pyc
+backend/app/routers/__pycache__/auth.cpython-310.pyc
+backend/app/routers/__pycache__/cities.cpython-310.pyc
+backend/app/routers/__pycache__/dashboard.cpython-310.pyc
+backend/app/routers/__pycache__/schedules.cpython-310.pyc
+backend/app/routers/__pycache__/users.cpython-310.pyc
+backend/app/__pycache__/__init__.cpython-310.pyc
+backend/app/__pycache__/auth.cpython-310.pyc
+backend/app/__pycache__/config.cpython-310.pyc
+backend/app/__pycache__/crud.cpython-310.pyc
+backend/app/__pycache__/database.cpython-310.pyc
+backend/app/__pycache__/main.cpython-310.pyc
+backend/app/__pycache__/models.cpython-310.pyc
+backend/app/__pycache__/schemas.cpython-310.pyc
