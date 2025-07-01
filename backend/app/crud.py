@@ -28,12 +28,33 @@ def create_user(db: Session, user: schemas.UserCreate):
 def get_cities(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.City).offset(skip).limit(limit).all()
 
+def get_city(db: Session, city_id: int):
+    return db.query(models.City).filter(models.City.id == city_id).first()
+
 def create_city(db: Session, city: schemas.CityCreate):
     db_city = models.City(**city.dict())
     db.add(db_city)
     db.commit()
     db.refresh(db_city)
     return db_city
+
+def update_city(db: Session, city_id: int, city_update: schemas.CityUpdate):
+    db_city = db.query(models.City).filter(models.City.id == city_id).first()
+    if db_city:
+        update_data = city_update.dict(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(db_city, field, value)
+        db.commit()
+        db.refresh(db_city)
+    return db_city
+
+def delete_city(db: Session, city_id: int):
+    db_city = db.query(models.City).filter(models.City.id == city_id).first()
+    if db_city:
+        db.delete(db_city)
+        db.commit()
+        return True
+    return False
 
 def get_schedules(
     db: Session, 

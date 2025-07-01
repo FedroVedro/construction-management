@@ -3,7 +3,16 @@ import React, { useEffect, useState } from 'react';
 const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
   const [processedData, setProcessedData] = useState([]);
   const [months, setMonths] = useState([]);
-  const [viewMode, setViewMode] = useState(selectedView || 'all'); // all, document, hr, procurement, construction
+  const [viewMode, setViewMode] = useState(selectedView || 'all');
+  const [sortBy, setSortBy] = useState('default'); // default, city, stage, department, startDate
+
+  // Названия отделов для разных типов
+  const typeNames = {
+    document: 'Документация',
+    hr: 'HR',
+    procurement: 'Закупки',
+    construction: 'Строительство'
+  };
 
   // Цвета для разных типов отделов
   const typeColors = {
@@ -11,13 +20,6 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     hr: '#2ecc71', 
     procurement: '#f39c12',
     construction: '#e74c3c'
-  };
-
-  const typeNames = {
-    document: 'Документация',
-    hr: 'HR',
-    procurement: 'Закупки',
-    construction: 'Строительство'
   };
 
   useEffect(() => {
@@ -69,11 +71,26 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     const processed = schedules
       .filter(s => viewMode === 'all' || s.schedule_type === viewMode)
       .map(schedule => {
-        const cityName = cities.find(c => c.id === schedule.city_id)?.name || 'Неизвестный город';
+        const cityName = cities.find(c => c.id === schedule.city_id)?.name || 'Неизвестный объект';
+        
+        // Получаем наименование работ в зависимости от типа
+        let workName = '';
+        if (schedule.schedule_type === 'document') {
+          workName = schedule.sections || '';
+        } else if (schedule.schedule_type === 'hr') {
+          workName = schedule.vacancy || '';
+        } else if (schedule.schedule_type === 'procurement') {
+          workName = schedule.work_name || '';
+        } else if (schedule.schedule_type === 'construction') {
+          workName = schedule.work_name || '';
+        }
         
         return {
           id: schedule.id,
-          name: `${cityName} - ${schedule.construction_stage}`,
+          cityName: cityName,
+          constructionStage: schedule.construction_stage,
+          workName: workName,
+          department: typeNames[schedule.schedule_type],
           type: schedule.schedule_type,
           plannedStart: new Date(schedule.planned_start_date),
           plannedEnd: new Date(schedule.planned_end_date),
@@ -83,8 +100,24 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
         };
       });
     
-    setProcessedData(processed);
-  }, [schedules, cities, viewMode]);
+    // Применяем сортировку
+    const sorted = [...processed].sort((a, b) => {
+      switch (sortBy) {
+        case 'city':
+          return a.cityName.localeCompare(b.cityName);
+        case 'stage':
+          return a.constructionStage.localeCompare(b.constructionStage);
+        case 'department':
+          return a.department.localeCompare(b.department);
+        case 'startDate':
+          return a.plannedStart - b.plannedStart;
+        default:
+          return 0;
+      }
+    });
+    
+    setProcessedData(sorted);
+  }, [schedules, cities, viewMode, sortBy]);
 
   const getDayKey = (year, month, day) => `${year}-${month}-${day}`;
 
@@ -121,42 +154,57 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     };
   };
 
+  const formatDate = (date) => {
+    return date.toLocaleDateString('ru-RU', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric' 
+    });
+  };
+
   return (
-    <div style={{ padding: '20px' }}>
+    <div style={{ width: '100%' }}>
       <div style={{ marginBottom: '20px' }}>
         <h2>Календарный график работ</h2>
         
-        {/* Фильтр по типам */}
-        {!selectedView && (
-          <div style={{ marginTop: '10px' }}>
-            <label style={{ marginRight: '10px' }}>Показать:</label>
+        <div style={{ display: 'flex', gap: '20px', alignItems: 'center', marginTop: '10px' }}>
+          {/* Фильтр по типам */}
+          {!selectedView && (
+            <div>
+              <label style={{ marginRight: '10px' }}>Показать:</label>
+              <select 
+                value={viewMode} 
+                onChange={(e) => setViewMode(e.target.value)}
+                style={{ padding: '5px', borderRadius: '4px', border: '1px solid #ddd' }}
+              >
+                <option value="all">Все отделы</option>
+                <option value="document">Документация</option>
+                <option value="hr">HR</option>
+                <option value="procurement">Закупки</option>
+                <option value="construction">Строительство</option>
+              </select>
+            </div>
+          )}
+
+          {/* Сортировка */}
+          <div>
+            <label style={{ marginRight: '10px' }}>Сортировать по:</label>
             <select 
-              value={viewMode} 
-              onChange={(e) => setViewMode(e.target.value)}
+              value={sortBy} 
+              onChange={(e) => setSortBy(e.target.value)}
               style={{ padding: '5px', borderRadius: '4px', border: '1px solid #ddd' }}
             >
-              <option value="all">Все отделы</option>
-              <option value="document">Документация</option>
-              <option value="hr">HR</option>
-              <option value="procurement">Закупки</option>
-              <option value="construction">Строительство</option>
+              <option value="default">По умолчанию</option>
+              <option value="city">Объекту строительства</option>
+              <option value="stage">Этапу строительства</option>
+              <option value="department">Отделу</option>
+              <option value="startDate">Дате начала</option>
             </select>
           </div>
-        )}
+        </div>
 
         {/* Легенда */}
         <div style={{ marginTop: '15px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-          {Object.entries(typeColors).map(([type, color]) => (
-            <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <div style={{ 
-                width: '20px', 
-                height: '20px', 
-                backgroundColor: color,
-                border: '1px solid #ddd' 
-              }}></div>
-              <span>{typeNames[type]}</span>
-            </div>
-          ))}
           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <div style={{ 
               width: '20px', 
@@ -171,6 +219,9 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
             }}>Ф</div>
             <span>Фактическое выполнение</span>
           </div>
+          <div style={{ marginLeft: '20px', fontStyle: 'italic', color: '#666' }}>
+            Светлые ячейки - плановые даты, яркие ячейки - фактические даты
+          </div>
         </div>
       </div>
 
@@ -184,16 +235,15 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
           <thead>
             {/* Строка с месяцами */}
             <tr>
-              <th style={{ 
+              <th colSpan="7" style={{ 
                 border: '1px solid #ddd', 
                 padding: '8px',
                 backgroundColor: '#f8f9fa',
-                minWidth: '250px',
                 position: 'sticky',
                 left: 0,
-                zIndex: 2
+                zIndex: 3
               }}>
-                Этап / Месяц
+                Информация о работах
               </th>
               {months.map((month, idx) => (
                 <th 
@@ -210,15 +260,53 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
                 </th>
               ))}
             </tr>
-            {/* Строка с днями */}
+            {/* Строка с заголовками колонок и днями */}
             <tr>
               <th style={{ 
                 border: '1px solid #ddd',
                 backgroundColor: '#f8f9fa',
+                padding: '8px',
                 position: 'sticky',
                 left: 0,
-                zIndex: 2
-              }}></th>
+                zIndex: 2,
+                minWidth: '150px'
+              }}>Объект</th>
+              <th style={{ 
+                border: '1px solid #ddd',
+                backgroundColor: '#f8f9fa',
+                padding: '8px',
+                minWidth: '150px'
+              }}>Этап строительства</th>
+              <th style={{ 
+                border: '1px solid #ddd',
+                backgroundColor: '#f8f9fa',
+                padding: '8px',
+                minWidth: '200px'
+              }}>Наименование работ</th>
+              <th style={{ 
+                border: '1px solid #ddd',
+                backgroundColor: '#f8f9fa',
+                padding: '8px',
+                minWidth: '100px'
+              }}>Отдел</th>
+              <th style={{ 
+                border: '1px solid #ddd',
+                backgroundColor: '#f8f9fa',
+                padding: '8px',
+                minWidth: '90px'
+              }}>План начало</th>
+              <th style={{ 
+                border: '1px solid #ddd',
+                backgroundColor: '#f8f9fa',
+                padding: '8px',
+                minWidth: '90px'
+              }}>План конец</th>
+              <th style={{ 
+                border: '1px solid #ddd',
+                backgroundColor: '#f8f9fa',
+                padding: '8px',
+                minWidth: '90px'
+              }}>Факт начало</th>
               {months.map(month => 
                 Array.from({ length: month.days }, (_, i) => i + 1).map(day => (
                   <th 
@@ -247,21 +335,58 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
                   backgroundColor: 'white',
                   position: 'sticky',
                   left: 0,
-                  zIndex: 1,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  maxWidth: '250px'
+                  zIndex: 1
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <div style={{
-                      width: '10px',
-                      height: '10px',
-                      backgroundColor: task.color,
-                      borderRadius: '2px'
-                    }}></div>
-                    {task.name}
-                  </div>
+                  {task.cityName}
+                </td>
+                <td style={{ 
+                  border: '1px solid #ddd', 
+                  padding: '4px',
+                  backgroundColor: 'white'
+                }}>
+                  {task.constructionStage}
+                </td>
+                <td style={{ 
+                  border: '1px solid #ddd', 
+                  padding: '4px',
+                  backgroundColor: 'white',
+                  whiteSpace: 'pre-wrap',
+                  maxWidth: '200px'
+                }}>
+                  {task.workName}
+                </td>
+                <td style={{ 
+                  border: '1px solid #ddd', 
+                  padding: '4px',
+                  backgroundColor: 'white',
+                  fontWeight: 'bold',
+                  color: task.color
+                }}>
+                  {task.department}
+                </td>
+                <td style={{ 
+                  border: '1px solid #ddd', 
+                  padding: '4px',
+                  backgroundColor: 'white',
+                  fontSize: '11px'
+                }}>
+                  {formatDate(task.plannedStart)}
+                </td>
+                <td style={{ 
+                  border: '1px solid #ddd', 
+                  padding: '4px',
+                  backgroundColor: 'white',
+                  fontSize: '11px'
+                }}>
+                  {formatDate(task.plannedEnd)}
+                </td>
+                <td style={{ 
+                  border: '1px solid #ddd', 
+                  padding: '4px',
+                  backgroundColor: 'white',
+                  fontSize: '11px'
+                }}>
+                  {task.actualStart ? formatDate(task.actualStart) : '-'}
                 </td>
                 {months.map(month => 
                   Array.from({ length: month.days }, (_, i) => i + 1).map(day => {

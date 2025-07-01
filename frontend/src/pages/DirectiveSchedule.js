@@ -39,18 +39,18 @@ const DirectiveSchedule = () => {
   };
 
   return (
-    <div className="container">
+    <div className="container-fluid">
       <h1>Директивный агрегированный график</h1>
       
-      <div className="card">
+      <div className="card" style={{ maxWidth: '600px' }}>
         <div className="form-group">
-          <label className="form-label">Выберите город</label>
+          <label className="form-label">Выберите объект строительства</label>
           <select 
             className="form-control"
             value={selectedCity || ''}
             onChange={(e) => setSelectedCity(e.target.value || null)}
           >
-            <option value="">Все города</option>
+            <option value="">Все объекты</option>
             {cities.map(city => (
               <option key={city.id} value={city.id}>{city.name}</option>
             ))}
@@ -58,7 +58,7 @@ const DirectiveSchedule = () => {
         </div>
       </div>
 
-      <div className="card">
+      <div className="card-full-width">
         {loading ? (
           <div style={{ textAlign: 'center', padding: '40px' }}>
             <div>Загрузка данных...</div>

@@ -29,14 +29,19 @@ class Token(BaseModel):
 
 class CityBase(BaseModel):
     name: str
-    departments: str
+    description: Optional[str] = None
 
 class CityCreate(CityBase):
     pass
 
+class CityUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
 class City(CityBase):
     id: int
     created_at: datetime
+    updated_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True

@@ -256,7 +256,7 @@ const ConstructionSchedule = () => {
   };
 
   return (
-    <div className="container">
+    <div className="container-fluid">
       <h1>График строительства</h1>
       
       {/* Вкладки городов */}
@@ -300,7 +300,7 @@ const ConstructionSchedule = () => {
 
       {/* Показываем либо таблицу, либо календарь */}
       {showCalendar ? (
-        <div className="card">
+        <div className="card-full-width">
           <CalendarGanttChart 
             schedules={schedules} 
             cities={cities}
@@ -310,7 +310,7 @@ const ConstructionSchedule = () => {
       ) : (
         <>
           {/* Excel-подобная таблица */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="card-full-width" style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{ overflowX: 'auto' }}>
               <table className="table" style={{ marginBottom: 0 }}>
                 <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8f9fa', zIndex: 10 }}>

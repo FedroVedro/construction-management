@@ -4,9 +4,10 @@ import client from '../api/client';
 const Cities = () => {
   const [cities, setCities] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  const [editingCity, setEditingCity] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
-    departments: ''
+    description: ''
   });
 
   useEffect(() => {
@@ -25,34 +26,64 @@ const Cities = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await client.post('/cities', formData);
+      if (editingCity) {
+        await client.put(`/cities/${editingCity.id}`, formData);
+      } else {
+        await client.post('/cities', formData);
+      }
       fetchCities();
-      setShowForm(false);
-      setFormData({ name: '', departments: '' });
+      resetForm();
     } catch (error) {
-      console.error('Error creating city:', error);
-      alert('Ошибка при создании города');
+      console.error('Error saving city:', error);
+      alert('Ошибка при сохранении объекта строительства');
     }
   };
 
+  const handleEdit = (city) => {
+    setEditingCity(city);
+    setFormData({
+      name: city.name,
+      description: city.description || ''
+    });
+    setShowForm(true);
+  };
+
+  const handleDelete = async (cityId) => {
+    if (window.confirm('Вы уверены, что хотите удалить этот объект строительства?')) {
+      try {
+        await client.delete(`/cities/${cityId}`);
+        fetchCities();
+      } catch (error) {
+        console.error('Error deleting city:', error);
+        alert('Ошибка при удалении объекта строительства');
+      }
+    }
+  };
+
+  const resetForm = () => {
+    setShowForm(false);
+    setEditingCity(null);
+    setFormData({ name: '', description: '' });
+  };
+
   return (
-    <div className="container">
-      <h1>Управление городами</h1>
+    <div className="container-fluid">
+      <h1>Управление объектами строительства</h1>
       
       <button 
         className="btn btn-primary" 
         onClick={() => setShowForm(!showForm)}
         style={{ marginBottom: '20px' }}
       >
-        {showForm ? 'Отмена' : 'Добавить город'}
+        {showForm ? 'Отмена' : 'Добавить объект строительства'}
       </button>
 
       {showForm && (
-        <div className="card">
-          <h3>Новый город</h3>
+        <div className="card" style={{ maxWidth: '800px' }}>
+          <h3>{editingCity ? 'Редактировать объект строительства' : 'Новый объект строительства'}</h3>
           <form onSubmit={handleSubmit}>
             <div className="form-group">
-              <label className="form-label">Название города</label>
+              <label className="form-label">Название объекта</label>
               <input
                 type="text"
                 className="form-control"
@@ -62,43 +93,67 @@ const Cities = () => {
               />
             </div>
             <div className="form-group">
-              <label className="form-label">Отделы (через запятую)</label>
-              <input
-                type="text"
+              <label className="form-label">Описание</label>
+              <textarea
                 className="form-control"
-                placeholder="Отдел 1, Отдел 2, Отдел 3"
-                value={formData.departments}
-                onChange={(e) => setFormData({ ...formData, departments: e.target.value })}
-                required
+                rows="3"
+                placeholder="Введите описание объекта строительства"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               />
             </div>
-            <button type="submit" className="btn btn-primary">Создать</button>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button type="submit" className="btn btn-primary">
+                {editingCity ? 'Обновить' : 'Создать'}
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={resetForm}>
+                Отмена
+              </button>
+            </div>
           </form>
         </div>
       )}
 
-      <div className="card">
-        <h3>Список городов</h3>
-        <table className="table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Название</th>
-              <th>Отделы</th>
-              <th>Дата создания</th>
-            </tr>
-          </thead>
-          <tbody>
-            {cities.map(city => (
-              <tr key={city.id}>
-                <td>{city.id}</td>
-                <td>{city.name}</td>
-                <td>{city.departments}</td>
-                <td>{new Date(city.created_at).toLocaleDateString()}</td>
+      <div className="card-full-width">
+        <h3>Список объектов строительства</h3>
+        <div className="table-responsive">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Название</th>
+                <th>Описание</th>
+                <th>Дата создания</th>
+                <th>Действия</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {cities.map(city => (
+                <tr key={city.id}>
+                  <td>{city.id}</td>
+                  <td>{city.name}</td>
+                  <td>{city.description || '-'}</td>
+                  <td>{new Date(city.created_at).toLocaleDateString()}</td>
+                  <td>
+                    <button 
+                      className="btn btn-secondary btn-sm" 
+                      onClick={() => handleEdit(city)}
+                      style={{ marginRight: '5px' }}
+                    >
+                      Редактировать
+                    </button>
+                    <button 
+                      className="btn btn-danger btn-sm" 
+                      onClick={() => handleDelete(city.id)}
+                    >
+                      Удалить
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

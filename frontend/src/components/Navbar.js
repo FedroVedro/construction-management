@@ -15,12 +15,12 @@ const Navbar = () => {
     backgroundColor: '#2c3e50',
     padding: '1rem 0',
     color: 'white',
+    width: '100%',
   };
 
   const navContainerStyle = {
-    maxWidth: '1200px',
-    margin: '0 auto',
-    padding: '0 20px',
+    width: '100%',
+    padding: '0 40px',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -38,7 +38,7 @@ const Navbar = () => {
         <div>
           <Link to="/" style={linkStyle}>Главная</Link>
           {user?.role === 'admin' && (
-            <Link to="/cities" style={linkStyle}>Города</Link>
+            <Link to="/cities" style={linkStyle}>Объекты строительства</Link>
           )}
           <Link to="/document-schedule" style={linkStyle}>График документов</Link>
           <Link to="/hr-schedule" style={linkStyle}>HR-график</Link>

@@ -21,8 +21,9 @@ class City(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True)
-    departments = Column(Text)  # JSON string of departments
+    description = Column(Text, nullable=True)  # Изменено с departments на description
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     schedules = relationship("Schedule", back_populates="city")
 

@@ -5,9 +5,13 @@
 }
 
 .container {
-  max-width: 1200px;
-  margin: 0 auto;
+  width: 100%;
   padding: 20px;
+}
+
+.container-fluid {
+  width: 100%;
+  padding: 20px 40px;
 }
 
 .card {
@@ -16,6 +20,15 @@
   padding: 20px;
   margin-bottom: 20px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.card-full-width {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  overflow-x: auto;
 }
 
 .btn {
@@ -44,6 +57,11 @@
 .btn-danger {
   background-color: #dc3545;
   color: white;
+}
+
+.btn-sm {
+  padding: 5px 10px;
+  font-size: 12px;
 }
 
 .form-group {
@@ -85,6 +103,11 @@
   background-color: #f8f9fa;
 }
 
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .status-on-time {
   color: #28a745;
 }
@@ -95,4 +118,36 @@
 
 .status-ahead {
   color: #17a2b8;
+}
+
+/* Специальные стили для полноширинных таблиц */
+.full-width-table-container {
+  margin-left: -20px;
+  margin-right: -20px;
+  padding: 0 20px;
+  overflow-x: auto;
+}
+
+@media (min-width: 1400px) {
+  .container-fluid {
+    padding: 20px 60px;
+  }
+}
+
+@media (max-width: 768px) {
+  .container,
+  .container-fluid {
+    padding: 10px;
+  }
+  
+  .card,
+  .card-full-width {
+    padding: 15px;
+  }
+  
+  .full-width-table-container {
+    margin-left: -10px;
+    margin-right: -10px;
+    padding: 0 10px;
+  }
 }

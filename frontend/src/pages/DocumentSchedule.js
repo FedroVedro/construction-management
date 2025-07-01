@@ -156,7 +156,7 @@ const DocumentSchedule = () => {
 
   const addNewRow = () => {
     if (!selectedCity) {
-      alert('Пожалуйста, выберите город');
+      alert('Пожалуйста, выберите объект строительства');
       return;
     }
     
@@ -268,10 +268,10 @@ const DocumentSchedule = () => {
   };
 
   return (
-    <div className="container">
+    <div className="container-fluid">
       <h1>График выдачи рабочей документации</h1>
       
-      {/* Вкладки городов */}
+      {/* Вкладки объектов строительства */}
       <div style={{ 
         display: 'flex', 
         borderBottom: '2px solid #dee2e6',
@@ -312,7 +312,7 @@ const DocumentSchedule = () => {
 
       {/* Показываем либо таблицу, либо календарь */}
       {showCalendar ? (
-        <div className="card">
+        <div className="card-full-width">
           <CalendarGanttChart 
             schedules={schedules} 
             cities={cities}
@@ -322,7 +322,7 @@ const DocumentSchedule = () => {
       ) : (
         <>
           {/* Excel-подобная таблица */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="card-full-width" style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{ overflowX: 'auto' }}>
               <table className="table" style={{ marginBottom: 0 }}>
                 <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8f9fa', zIndex: 10 }}>
