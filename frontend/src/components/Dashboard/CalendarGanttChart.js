@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 
 const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
   const [processedData, setProcessedData] = useState([]);
-  const [months, setMonths] = useState([]);
+  const [decades, setDecades] = useState([]);
   const [viewMode, setViewMode] = useState(selectedView || 'all');
   const [sortBy, setSortBy] = useState('default'); // default, city, stage, department, startDate
 
@@ -20,6 +20,24 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     hr: '#2ecc71', 
     procurement: '#f39c12',
     construction: '#e74c3c'
+  };
+
+  // Функция для получения декады (1-10, 11-20, 21-конец месяца)
+  const getDecade = (date) => {
+    const day = date.getDate();
+    if (day <= 10) return 1;
+    if (day <= 20) return 2;
+    return 3;
+  };
+
+  // Функция для получения названия декады
+  const getDecadeName = (decade) => {
+    switch(decade) {
+      case 1: return 'I';
+      case 2: return 'II';
+      case 3: return 'III';
+      default: return '';
+    }
   };
 
   useEffect(() => {
@@ -51,21 +69,30 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     minDate.setMonth(minDate.getMonth() - 1);
     maxDate.setMonth(maxDate.getMonth() + 1);
 
-    // Создать массив месяцев
-    const monthsArray = [];
+    // Создать массив декад
+    const decadesArray = [];
     const current = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
     
     while (current <= maxDate) {
-      monthsArray.push({
-        year: current.getFullYear(),
-        month: current.getMonth(),
-        name: current.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }),
-        days: new Date(current.getFullYear(), current.getMonth() + 1, 0).getDate()
-      });
+      const year = current.getFullYear();
+      const month = current.getMonth();
+      const monthName = current.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+      
+      // Добавляем три декады для каждого месяца
+      for (let decade = 1; decade <= 3; decade++) {
+        decadesArray.push({
+          year,
+          month,
+          decade,
+          monthName,
+          key: `${year}-${month}-${decade}`
+        });
+      }
+      
       current.setMonth(current.getMonth() + 1);
     }
     
-    setMonths(monthsArray);
+    setDecades(decadesArray);
 
     // Обработать данные для отображения
     const processed = schedules
@@ -119,39 +146,62 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     setProcessedData(sorted);
   }, [schedules, cities, viewMode, sortBy]);
 
-  const getDayKey = (year, month, day) => `${year}-${month}-${day}`;
-
-  const isDateInRange = (date, start, end) => {
-    return date >= start && date <= end;
+  // Проверка, попадает ли дата в декаду
+  const isDateInDecade = (date, year, month, decade) => {
+    if (date.getFullYear() !== year || date.getMonth() !== month) {
+      return false;
+    }
+    
+    const day = date.getDate();
+    if (decade === 1) return day >= 1 && day <= 10;
+    if (decade === 2) return day >= 11 && day <= 20;
+    if (decade === 3) return day >= 21;
+    return false;
   };
 
-  const getCellContent = (task, year, month, day) => {
-    const currentDate = new Date(year, month, day);
-    const dayKey = getDayKey(year, month, day);
+  // Проверка, попадает ли период в декаду
+  const isPeriodInDecade = (startDate, endDate, year, month, decade) => {
+    // Получаем границы декады
+    let decadeStart, decadeEnd;
     
-    let content = null;
+    if (decade === 1) {
+      decadeStart = new Date(year, month, 1);
+      decadeEnd = new Date(year, month, 10);
+    } else if (decade === 2) {
+      decadeStart = new Date(year, month, 11);
+      decadeEnd = new Date(year, month, 20);
+    } else {
+      decadeStart = new Date(year, month, 21);
+      decadeEnd = new Date(year, month + 1, 0); // последний день месяца
+    }
+    
+    // Проверяем пересечение периодов
+    return startDate <= decadeEnd && endDate >= decadeStart;
+  };
+
+  const getCellContent = (task, year, month, decade) => {
     let backgroundColor = 'transparent';
-    let isActual = false;
-
-    // Проверяем плановые даты
-    if (isDateInRange(currentDate, task.plannedStart, task.plannedEnd)) {
-      backgroundColor = task.color + '40'; // Прозрачность 40%
-    }
-
-    // Проверяем фактические даты
-    if (task.actualStart && task.actualEnd && isDateInRange(currentDate, task.actualStart, task.actualEnd)) {
+    let content = '';
+    
+    // Проверяем плановые даты - окрашиваем ячейку
+    if (isPeriodInDecade(task.plannedStart, task.plannedEnd, year, month, decade)) {
       backgroundColor = task.color;
-      isActual = true;
-    } else if (task.actualStart && !task.actualEnd && currentDate >= task.actualStart) {
-      // Если есть только дата начала
-      backgroundColor = task.color + '80'; // Прозрачность 80%
-      isActual = true;
     }
-
-    return {
-      backgroundColor,
-      content: isActual ? 'Ф' : ''
-    };
+    
+    // Проверяем фактические даты - добавляем букву Ф
+    if (task.actualStart && task.actualEnd) {
+      if (isPeriodInDecade(task.actualStart, task.actualEnd, year, month, decade)) {
+        content = 'Ф';
+      }
+    } else if (task.actualStart && !task.actualEnd) {
+      // Если есть только дата начала, проверяем от нее до текущей даты
+      const currentDate = new Date();
+      if (isPeriodInDecade(task.actualStart, currentDate, year, month, decade)) {
+        content = 'Ф';
+      }
+    }
+    
+    return { backgroundColor, content };
   };
 
   const formatDate = (date) => {
@@ -165,7 +215,7 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
   return (
     <div style={{ width: '100%' }}>
       <div style={{ marginBottom: '20px' }}>
-        <h2>Календарный график работ</h2>
+        <h2>Календарный график работ (по декадам)</h2>
         
         <div style={{ display: 'flex', gap: '20px', alignItems: 'center', marginTop: '10px' }}>
           {/* Фильтр по типам */}
@@ -204,23 +254,37 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
         </div>
 
         {/* Легенда */}
-        <div style={{ marginTop: '15px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <div style={{ 
-              width: '20px', 
-              height: '20px', 
-              backgroundColor: '#ccc',
-              border: '1px solid #ddd',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '12px',
-              fontWeight: 'bold'
-            }}>Ф</div>
-            <span>Фактическое выполнение</span>
+        <div style={{ marginTop: '15px' }}>
+          <h4>Легенда:</h4>
+          <div style={{ display: 'flex', gap: '30px', flexWrap: 'wrap' }}>
+            {Object.entries(typeColors).map(([type, color]) => (
+              <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <div style={{ 
+                  width: '30px', 
+                  height: '20px', 
+                  backgroundColor: color,
+                  border: '1px solid #ddd' 
+                }}></div>
+                <span>{typeNames[type]} (план)</span>
+              </div>
+            ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <div style={{ 
+                width: '30px', 
+                height: '20px', 
+                backgroundColor: '#f8f9fa',
+                border: '1px solid #ddd',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '14px',
+                fontWeight: 'bold'
+              }}>Ф</div>
+              <span>Фактическое выполнение</span>
+            </div>
           </div>
-          <div style={{ marginLeft: '20px', fontStyle: 'italic', color: '#666' }}>
-            Светлые ячейки - плановые даты, яркие ячейки - фактические даты
+          <div style={{ marginTop: '10px', fontStyle: 'italic', color: '#666' }}>
+            I - первая декада (1-10), II - вторая декада (11-20), III - третья декада (21-конец месяца)
           </div>
         </div>
       </div>
@@ -245,10 +309,23 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
               }}>
                 Информация о работах
               </th>
-              {months.map((month, idx) => (
+              {/* Группируем декады по месяцам */}
+              {decades.reduce((acc, decade, index) => {
+                if (index === 0 || decade.month !== decades[index - 1].month) {
+                  // Считаем количество декад в этом месяце
+                  const monthDecades = decades.filter(d => 
+                    d.year === decade.year && d.month === decade.month
+                  );
+                  acc.push({
+                    monthName: decade.monthName,
+                    colspan: monthDecades.length
+                  });
+                }
+                return acc;
+              }, []).map((month, idx) => (
                 <th 
                   key={idx} 
-                  colSpan={month.days}
+                  colSpan={month.colspan}
                   style={{ 
                     border: '1px solid #ddd', 
                     padding: '4px',
@@ -256,11 +333,11 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
                     textAlign: 'center'
                   }}
                 >
-                  {month.name}
+                  {month.monthName}
                 </th>
               ))}
             </tr>
-            {/* Строка с заголовками колонок и днями */}
+            {/* Строка с заголовками колонок и декадами */}
             <tr>
               <th style={{ 
                 border: '1px solid #ddd',
@@ -307,23 +384,21 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
                 padding: '8px',
                 minWidth: '90px'
               }}>Факт начало</th>
-              {months.map(month => 
-                Array.from({ length: month.days }, (_, i) => i + 1).map(day => (
-                  <th 
-                    key={`${month.year}-${month.month}-${day}`}
-                    style={{ 
-                      border: '1px solid #ddd', 
-                      padding: '2px',
-                      backgroundColor: '#f8f9fa',
-                      width: '25px',
-                      fontSize: '10px',
-                      textAlign: 'center'
-                    }}
-                  >
-                    {day}
-                  </th>
-                ))
-              )}
+              {decades.map(decade => (
+                <th 
+                  key={decade.key}
+                  style={{ 
+                    border: '1px solid #ddd', 
+                    padding: '2px',
+                    backgroundColor: '#f8f9fa',
+                    width: '40px',
+                    fontSize: '11px',
+                    textAlign: 'center'
+                  }}
+                >
+                  {getDecadeName(decade.decade)}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -359,8 +434,7 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
                   border: '1px solid #ddd', 
                   padding: '4px',
                   backgroundColor: 'white',
-                  fontWeight: 'bold',
-                  color: task.color
+                  fontWeight: 'bold'
                 }}>
                   {task.department}
                 </td>
@@ -388,28 +462,27 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
                 }}>
                   {task.actualStart ? formatDate(task.actualStart) : '-'}
                 </td>
-                {months.map(month => 
-                  Array.from({ length: month.days }, (_, i) => i + 1).map(day => {
-                    const cell = getCellContent(task, month.year, month.month, day);
-                    return (
-                      <td 
-                        key={`${month.year}-${month.month}-${day}`}
-                        style={{ 
-                          border: '1px solid #ddd',
-                          backgroundColor: cell.backgroundColor,
-                          width: '25px',
-                          height: '25px',
-                          padding: '0',
-                          textAlign: 'center',
-                          fontSize: '10px',
-                          fontWeight: 'bold'
-                        }}
-                      >
-                        {cell.content}
-                      </td>
-                    );
-                  })
-                )}
+                {decades.map(decade => {
+                  const cell = getCellContent(task, decade.year, decade.month, decade.decade);
+                  return (
+                    <td 
+                      key={decade.key}
+                      style={{ 
+                        border: '1px solid #ddd',
+                        backgroundColor: cell.backgroundColor,
+                        width: '40px',
+                        height: '30px',
+                        padding: '0',
+                        textAlign: 'center',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: '#000'
+                      }}
+                    >
+                      {cell.content}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
