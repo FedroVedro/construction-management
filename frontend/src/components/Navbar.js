@@ -35,10 +35,13 @@ const Navbar = () => {
   return (
     <nav style={navStyle}>
       <div style={navContainerStyle}>
-        <div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
           <Link to="/" style={linkStyle}>Главная</Link>
           {user?.role === 'admin' && (
-            <Link to="/cities" style={linkStyle}>Объекты строительства</Link>
+            <>
+              <Link to="/cities" style={linkStyle}>Объекты строительства</Link>
+              <Link to="/construction-stages" style={linkStyle}>Этапы строительства</Link>
+            </>
           )}
           <Link to="/document-schedule" style={linkStyle}>График документов</Link>
           <Link to="/hr-schedule" style={linkStyle}>HR-график</Link>
@@ -46,7 +49,7 @@ const Navbar = () => {
           <Link to="/construction-schedule" style={linkStyle}>График строительства</Link>
           <Link to="/directive-schedule" style={linkStyle}>Директивный график</Link>
         </div>
-        <div>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
           <span style={{ marginRight: '20px' }}>
             {user?.username} ({user?.role})
           </span>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import CalendarGanttChart from '../components/Dashboard/CalendarGanttChart';
+import StageAutocomplete from '../components/StageAutocomplete';
 
 const ProcurementSchedule = () => {
   const [schedules, setSchedules] = useState([]);
@@ -218,6 +219,23 @@ const ProcurementSchedule = () => {
     const isDateField = field.includes('date');
 
     if (isEditing) {
+      if (field === 'construction_stage') {
+        return (
+          <StageAutocomplete
+            value={tempValue}
+            onChange={(newValue) => {
+              setTempValue(newValue);
+              saveCell(schedule.id, field, newValue);
+              setEditingCell(null);
+            }}
+            onBlur={() => {
+              setEditingCell(null);
+              setTempValue('');
+            }}
+            autoFocus={true}
+          />
+        );
+      }
       return (
         <input
           type={isDateField ? 'date' : 'text'}
@@ -306,13 +324,13 @@ const ProcurementSchedule = () => {
       ) : (
         <>
           {/* Excel-подобная таблица */}
-          <div className="card-full-width" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ overflowX: 'auto' }}>
+          <div className="card-full-width" style={{ padding: 0, overflow: 'visible' }}>
+            <div style={{ overflowX: 'auto', overflowY: 'visible' }}>
               <table className="table" style={{ marginBottom: 0 }}>
                 <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8f9fa', zIndex: 10 }}>
                   <tr>
                     <th style={{ width: '50px' }}>№</th>
-                    <th style={{ minWidth: '180px' }}>Этап строительства</th>
+                    <th style={{ minWidth: '180px', position: 'relative' }}>Этап строительства</th>
                     <th style={{ minWidth: '200px' }}>Наименование работ</th>
                     <th style={{ minWidth: '150px' }}>Служба</th>
                     <th style={{ minWidth: '180px' }}>Ответственный</th>

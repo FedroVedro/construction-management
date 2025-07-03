@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import CalendarGanttChart from '../components/Dashboard/CalendarGanttChart';
+import StageAutocomplete from '../components/StageAutocomplete';
 
 const HRSchedule = () => {
   const [schedules, setSchedules] = useState([]);
@@ -226,6 +227,23 @@ const HRSchedule = () => {
     const isNumberField = field.includes('quantity');
 
     if (isEditing) {
+      if (field === 'construction_stage') {
+        return (
+          <StageAutocomplete
+            value={tempValue}
+            onChange={(newValue) => {
+              setTempValue(newValue);
+              saveCell(schedule.id, field, newValue);
+              setEditingCell(null);
+            }}
+            onBlur={() => {
+              setEditingCell(null);
+              setTempValue('');
+            }}
+            autoFocus={true}
+          />
+        );
+      }
       return (
         <input
           type={isDateField ? 'date' : isNumberField ? 'number' : 'text'}
@@ -314,13 +332,13 @@ const HRSchedule = () => {
       ) : (
         <>
           {/* Excel-подобная таблица */}
-          <div className="card-full-width" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="card-full-width" style={{ padding: 0, position: 'relative' }}>
             <div style={{ overflowX: 'auto' }}>
               <table className="table" style={{ marginBottom: 0 }}>
                 <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8f9fa', zIndex: 10 }}>
                   <tr>
                     <th style={{ width: '50px' }}>№</th>
-                    <th style={{ minWidth: '200px' }}>Этап строительства</th>
+                    <th style={{ minWidth: '200px', position: 'relative' }}>Этап строительства</th>
                     <th style={{ minWidth: '250px' }}>Вакансия</th>
                     <th style={{ minWidth: '100px' }}>Кол-во (план)</th>
                     <th style={{ minWidth: '100px' }}>Кол-во (факт)</th>
@@ -340,7 +358,9 @@ const HRSchedule = () => {
                       <td style={{ textAlign: 'center' }}>
                         {schedule.isNew ? '★' : index + 1}
                       </td>
-                      <td>{renderCell(schedule, 'construction_stage', schedule.construction_stage)}</td>
+                      <td style={{ position: 'relative', overflow: 'visible' }}>
+                        {renderCell(schedule, 'construction_stage', schedule.construction_stage)}
+                      </td>
                       <td>{renderCell(schedule, 'vacancy', schedule.vacancy)}</td>
                       <td>{renderCell(schedule, 'quantity_plan', schedule.quantity_plan)}</td>
                       <td>{renderCell(schedule, 'quantity_fact', schedule.quantity_fact)}</td>

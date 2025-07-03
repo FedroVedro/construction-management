@@ -46,10 +46,34 @@ class City(CityBase):
     class Config:
         from_attributes = True
 
+class ConstructionStageBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    order_index: Optional[int] = 0
+    is_active: Optional[bool] = True
+
+class ConstructionStageCreate(ConstructionStageBase):
+    pass
+
+class ConstructionStageUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    order_index: Optional[int] = None
+    is_active: Optional[bool] = None
+
+class ConstructionStage(ConstructionStageBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
 class ScheduleBase(BaseModel):
     schedule_type: str
     city_id: int
-    construction_stage: str
+    construction_stage_id: Optional[int] = None
+    construction_stage: Optional[str] = None  # Для обратной совместимости
     planned_start_date: Union[datetime, str]
     planned_end_date: Union[datetime, str]
     actual_start_date: Optional[Union[datetime, str]] = None
@@ -99,6 +123,7 @@ class ScheduleCreate(ScheduleBase):
     pass
 
 class ScheduleUpdate(BaseModel):
+    construction_stage_id: Optional[int] = None
     actual_start_date: Optional[Union[datetime, str]] = None
     actual_end_date: Optional[Union[datetime, str]] = None
     quantity_fact: Optional[int] = None
@@ -134,6 +159,7 @@ class Schedule(ScheduleBase):
     creator_id: int
     created_at: datetime
     updated_at: datetime
+    stage: Optional[ConstructionStage] = None
     
     class Config:
         from_attributes = True

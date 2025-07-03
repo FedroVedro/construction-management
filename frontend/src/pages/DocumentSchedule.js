@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import CalendarGanttChart from '../components/Dashboard/CalendarGanttChart';
+import StageAutocomplete from '../components/StageAutocomplete';
 
 const DocumentSchedule = () => {
   const [schedules, setSchedules] = useState([]);
@@ -208,6 +209,25 @@ const DocumentSchedule = () => {
     const isDateField = field.includes('date');
 
     if (isEditing) {
+      if (field === 'construction_stage') {
+        return (
+          <StageAutocomplete
+            value={tempValue}
+            onChange={(newValue) => {
+              setTempValue(newValue);
+              // Автоматически сохраняем при выборе из списка
+              saveCell(schedule.id, field, newValue);
+              setEditingCell(null);
+            }}
+            onBlur={() => {
+              setEditingCell(null);
+              setTempValue('');
+            }}
+            autoFocus={true}
+          />
+        );
+      }
+
       if (field === 'sections') {
         return (
           <textarea
@@ -322,7 +342,7 @@ const DocumentSchedule = () => {
       ) : (
         <>
           {/* Excel-подобная таблица */}
-          <div className="card-full-width" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="card-full-width" style={{ padding: 0, position: 'relative' }}>
             <div style={{ overflowX: 'auto' }}>
               <table className="table" style={{ marginBottom: 0 }}>
                 <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8f9fa', zIndex: 10 }}>

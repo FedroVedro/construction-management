@@ -6,6 +6,7 @@ import PrivateRoute from './components/PrivateRoute';
 import Login from './pages/Login';
 import Home from './pages/Home';
 import Cities from './pages/Cities';
+import ConstructionStages from './pages/ConstructionStages';
 import DocumentSchedule from './pages/DocumentSchedule';
 import HRSchedule from './pages/HRSchedule';
 import ProcurementSchedule from './pages/ProcurementSchedule';
@@ -23,6 +24,7 @@ function App() {
             <Route element={<Layout />}>
               <Route index element={<Home />} />
               <Route path="cities" element={<Cities />} />
+              <Route path="construction-stages" element={<ConstructionStages />} />
               <Route path="document-schedule" element={<DocumentSchedule />} />
               <Route path="hr-schedule" element={<HRSchedule />} />
               <Route path="procurement-schedule" element={<ProcurementSchedule />} />

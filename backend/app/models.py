@@ -21,11 +21,24 @@ class City(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True)
-    description = Column(Text, nullable=True)  # Изменено с departments на description
+    description = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     schedules = relationship("Schedule", back_populates="city")
+
+class ConstructionStage(Base):
+    __tablename__ = "construction_stages"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True, nullable=False)
+    description = Column(Text, nullable=True)
+    order_index = Column(Integer, default=0)  # Для сортировки этапов
+    is_active = Column(Boolean, default=True)  # Для скрытия неактуальных этапов
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    schedules = relationship("Schedule", back_populates="stage")
 
 class Schedule(Base):
     __tablename__ = "schedules"
@@ -34,9 +47,11 @@ class Schedule(Base):
     schedule_type = Column(String)  # document, hr, procurement, construction
     city_id = Column(Integer, ForeignKey("cities.id"))
     creator_id = Column(Integer, ForeignKey("users.id"))
+    construction_stage_id = Column(Integer, ForeignKey("construction_stages.id"), nullable=True)
     
-    # Common fields
-    construction_stage = Column(String)
+    # Оставляем старое поле для обратной совместимости
+    construction_stage = Column(String, nullable=True)
+    
     planned_start_date = Column(DateTime)
     planned_end_date = Column(DateTime)
     actual_start_date = Column(DateTime, nullable=True)
@@ -64,3 +79,4 @@ class Schedule(Base):
     
     city = relationship("City", back_populates="schedules")
     creator = relationship("User", back_populates="schedules")
+    stage = relationship("ConstructionStage", back_populates="schedules")

@@ -28,7 +28,8 @@
   padding: 20px;
   margin-bottom: 20px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  overflow-x: auto;
+  /* Убираем overflow чтобы dropdown мог выходить за границы */
+  position: relative;
 }
 
 .btn {
@@ -92,8 +93,12 @@
   padding: 12px;
   text-align: left;
   border-bottom: 1px solid #ddd;
+  position: relative; /* Для правильного позиционирования dropdown */
 }
-
+/* Специальный стиль для ячеек с автокомплитом */
+.table td:has(input[type="text"]) {
+  overflow: visible !important;
+}
 .table th {
   background-color: #f8f9fa;
   font-weight: 600;
