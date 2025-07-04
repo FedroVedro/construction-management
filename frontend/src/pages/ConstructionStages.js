@@ -30,20 +30,59 @@ const ConstructionStages = () => {
     }
   };
 
+// В файле ConstructionStages.js обновите функцию handleSubmit:
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log('Submitting form data:', formData);
+    
     try {
+      // Подготавливаем данные для отправки
+      const dataToSend = {
+        name: formData.name.trim(),
+        description: formData.description ? formData.description.trim() : null,
+        order_index: parseInt(formData.order_index) || 0,
+        is_active: formData.is_active
+      };
+      
+      console.log('Prepared data to send:', dataToSend);
+      
       if (editingStage) {
-        await client.put(`/construction-stages/${editingStage.id}`, formData);
+        // При редактировании отправляем только измененные поля
+        const updateData = {};
+        if (dataToSend.name !== editingStage.name) updateData.name = dataToSend.name;
+        if (dataToSend.description !== editingStage.description) updateData.description = dataToSend.description;
+        if (dataToSend.order_index !== editingStage.order_index) updateData.order_index = dataToSend.order_index;
+        if (dataToSend.is_active !== editingStage.is_active) updateData.is_active = dataToSend.is_active;
+        
+        await client.put(`/construction-stages/${editingStage.id}`, updateData);
       } else {
-        await client.post('/construction-stages', formData);
+        // При создании нового этапа
+        await client.post('/construction-stages', dataToSend);
       }
+      
       fetchStages();
       resetForm();
     } catch (error) {
       console.error('Error saving stage:', error);
+      console.error('Error response:', error.response?.data);
+      
       if (error.response?.data?.detail) {
-        alert(`Ошибка: ${error.response.data.detail}`);
+        // Обработка различных типов ошибок
+        const detail = error.response.data.detail;
+        
+        if (typeof detail === 'string') {
+          alert(`Ошибка: ${detail}`);
+        } else if (Array.isArray(detail)) {
+          // Pydantic validation errors
+          const messages = detail.map(err => {
+            const field = err.loc[err.loc.length - 1];
+            return `${field}: ${err.msg}`;
+          }).join('\n');
+          alert(`Ошибки валидации:\n${messages}`);
+        } else if (detail.msg) {
+          alert(`Ошибка: ${detail.msg}`);
+        }
       } else {
         alert('Ошибка при сохранении этапа строительства');
       }
@@ -120,10 +159,17 @@ const ConstructionStages = () => {
     }
   };
 
+
+
   const resetForm = () => {
     setShowForm(false);
     setEditingStage(null);
-    setFormData({ name: '', description: '', order_index: 0, is_active: true });
+    setFormData({ 
+      name: '', 
+      description: '', 
+      order_index: stages.length, // Устанавливаем следующий порядковый номер
+      is_active: true 
+    });
   };
 
   if (loading) {

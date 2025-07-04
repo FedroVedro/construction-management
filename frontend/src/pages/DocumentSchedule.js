@@ -86,11 +86,23 @@ const DocumentSchedule = () => {
     try {
       const isNewRow = scheduleId.toString().startsWith('new-');
       
+      // Добавляем проверку для пустых значений
+      if (field === 'construction_stage' && (!value || value.trim() === '')) {
+        console.log('Skipping save - empty construction stage');
+        return;
+      }
+      
       if (isNewRow) {
         // Для новых записей обновляем локально
         const updatedSchedules = schedules.map(s => {
           if (s.id === scheduleId) {
-            return { ...s, [field]: value };
+            const updated = { ...s };
+            if (field === 'quantity_plan' || field === 'quantity_fact' || field === 'workers_count') {
+              updated[field] = value ? parseInt(value) : '';
+            } else {
+              updated[field] = value;
+            }
+            return updated;
           }
           return s;
         });
@@ -99,27 +111,68 @@ const DocumentSchedule = () => {
         
         // Проверяем, заполнены ли все обязательные поля
         const schedule = updatedSchedules.find(s => s.id === scheduleId);
-        if (schedule.construction_stage && schedule.sections && 
-            schedule.planned_start_date && schedule.planned_end_date) {
+        
+        // Проверка для каждого типа расписания
+        let canSave = false;
+        
+        if (schedule.schedule_type === 'procurement') {
+          canSave = schedule.construction_stage && 
+                    schedule.work_name && 
+                    schedule.service &&
+                    schedule.responsible_employee && 
+                    schedule.contractor &&
+                    schedule.planned_start_date && 
+                    schedule.planned_end_date;
+        } else if (schedule.schedule_type === 'hr') {
+          canSave = schedule.construction_stage && 
+                    schedule.vacancy && 
+                    schedule.quantity_plan &&
+                    schedule.planned_start_date && 
+                    schedule.planned_end_date;
+        } else if (schedule.schedule_type === 'document') {
+          canSave = schedule.construction_stage && 
+                    schedule.sections &&
+                    schedule.planned_start_date && 
+                    schedule.planned_end_date;
+        } else if (schedule.schedule_type === 'construction') {
+          canSave = schedule.construction_stage && 
+                    schedule.work_name && 
+                    schedule.workers_count &&
+                    schedule.planned_start_date && 
+                    schedule.planned_end_date;
+        }
+        
+        if (canSave) {
+          console.log('Creating new schedule with data:', schedule);
           
-          console.log('Creating new schedule:', {
-            schedule_type: 'document',
+          // Подготавливаем данные для отправки
+          const requestData = {
+            schedule_type: schedule.schedule_type,
             city_id: parseInt(selectedCity),
-            construction_stage: schedule.construction_stage,
-            sections: schedule.sections,
+            construction_stage: schedule.construction_stage.trim(),
             planned_start_date: schedule.planned_start_date,
             planned_end_date: schedule.planned_end_date
-          });
+          };
+          
+          // Добавляем специфичные поля в зависимости от типа
+          if (schedule.schedule_type === 'procurement') {
+            requestData.work_name = schedule.work_name.trim();
+            requestData.service = schedule.service.trim();
+            requestData.responsible_employee = schedule.responsible_employee.trim();
+            requestData.contractor = schedule.contractor.trim();
+          } else if (schedule.schedule_type === 'hr') {
+            requestData.vacancy = schedule.vacancy.trim();
+            requestData.quantity_plan = parseInt(schedule.quantity_plan);
+            requestData.quantity_fact = schedule.quantity_fact ? parseInt(schedule.quantity_fact) : null;
+          } else if (schedule.schedule_type === 'document') {
+            requestData.sections = schedule.sections.trim();
+          } else if (schedule.schedule_type === 'construction') {
+            requestData.work_name = schedule.work_name.trim();
+            requestData.workers_count = parseInt(schedule.workers_count);
+          }
           
           // Создаем новую запись в БД
-          const response = await client.post('/schedules', {
-            schedule_type: 'document',
-            city_id: parseInt(selectedCity),
-            construction_stage: schedule.construction_stage,
-            sections: schedule.sections,
-            planned_start_date: schedule.planned_start_date,
-            planned_end_date: schedule.planned_end_date
-          });
+          const response = await client.post('/schedules', requestData);
           
           // Заменяем временный ID на реальный
           setSchedules(schedules.map(s => 
@@ -128,14 +181,22 @@ const DocumentSchedule = () => {
         }
       } else {
         // Обновление существующей записи
+        let processedValue = value;
+        
+        if (field === 'quantity_plan' || field === 'quantity_fact' || field === 'workers_count') {
+          processedValue = value ? parseInt(value) : null;
+        } else if (typeof value === 'string') {
+          processedValue = value.trim() || null;
+        }
+        
         const updateData = {};
-        updateData[field] = value || null;
+        updateData[field] = processedValue;
         
         await client.put(`/schedules/${scheduleId}`, updateData);
         
         // Обновляем локально для мгновенного отображения
         setSchedules(schedules.map(s => 
-          s.id === scheduleId ? { ...s, [field]: value } : s
+          s.id === scheduleId ? { ...s, [field]: processedValue } : s
         ));
       }
     } catch (error) {
@@ -145,15 +206,17 @@ const DocumentSchedule = () => {
         if (typeof error.response.data.detail === 'string') {
           alert(`Ошибка: ${error.response.data.detail}`);
         } else if (Array.isArray(error.response.data.detail)) {
-          const messages = error.response.data.detail.map(e => e.msg).join('\n');
+          const messages = error.response.data.detail.map(e => `${e.loc.join('.')}: ${e.msg}`).join('\n');
           alert(`Ошибки валидации:\n${messages}`);
         }
       } else {
         alert('Ошибка при сохранении данных');
       }
-      fetchSchedules();
+      fetchSchedules(); // Перезагружаем данные в случае ошибки
     }
   };
+
+// В файле DocumentSchedule.js исправьте функцию addNewRow:
 
   const addNewRow = () => {
     if (!selectedCity) {
@@ -163,8 +226,9 @@ const DocumentSchedule = () => {
     
     const newRow = {
       id: `new-${Date.now()}`,
+      schedule_type: 'document', // Правильный тип
       construction_stage: '',
-      sections: '',
+      sections: '', // Специфичное поле для документов
       planned_start_date: '',
       planned_end_date: '',
       actual_start_date: null,
@@ -214,14 +278,21 @@ const DocumentSchedule = () => {
           <StageAutocomplete
             value={tempValue}
             onChange={(newValue) => {
+              // Обновляем временное значение
               setTempValue(newValue);
-              // Автоматически сохраняем при выборе из списка
-              saveCell(schedule.id, field, newValue);
-              setEditingCell(null);
+              // Сохраняем только когда выбран валидный этап
+              if (newValue && newValue.trim()) {
+                saveCell(schedule.id, field, newValue);
+                setEditingCell(null);
+                setTempValue('');
+              }
             }}
             onBlur={() => {
-              setEditingCell(null);
-              setTempValue('');
+              // Если значение не изменилось или пустое, просто закрываем редактирование
+              if (!tempValue || tempValue === schedule.construction_stage) {
+                setEditingCell(null);
+                setTempValue('');
+              }
             }}
             autoFocus={true}
           />

@@ -13,6 +13,7 @@ const StageAutocomplete = ({ value, onChange, onBlur, autoFocus = false }) => {
   const wrapperRef = useRef(null);
   const dropdownRef = useRef(null);
   const isMouseDownOnDropdown = useRef(false);
+  const hasSelectedStage = useRef(false);
 
   // Загружаем все этапы при монтировании компонента
   useEffect(() => {
@@ -100,6 +101,7 @@ const StageAutocomplete = ({ value, onChange, onBlur, autoFocus = false }) => {
   const handleInputChange = (e) => {
     const newValue = e.target.value;
     setInputValue(newValue);
+    hasSelectedStage.current = false;
     
     // Фильтруем предложения
     const filtered = filterSuggestions(newValue);
@@ -126,7 +128,19 @@ const StageAutocomplete = ({ value, onChange, onBlur, autoFocus = false }) => {
 
   // Обработка клавиш
   const handleKeyDown = (e) => {
-    if (!showSuggestions || suggestions.length === 0) return;
+    if (!showSuggestions || suggestions.length === 0) {
+      // Если нажат Enter и dropdown закрыт, вызываем onChange с текущим значением
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const exactMatch = allStages.find(s =>
+          s.name.toLowerCase() === inputValue.toLowerCase()
+        );
+        if (exactMatch) {
+          selectStage(exactMatch);
+        }
+      }
+      return;
+    }
 
     switch (e.key) {
       case 'ArrowDown':
@@ -215,7 +229,11 @@ const StageAutocomplete = ({ value, onChange, onBlur, autoFocus = false }) => {
     setInputValue(stage.name);
     setShowSuggestions(false);
     setSelectedIndex(-1);
-    onChange(stage.name);
+    hasSelectedStage.current = true;
+    // Вызываем onChange с задержкой, чтобы избежать конфликтов
+    setTimeout(() => {
+      onChange(stage.name);
+    }, 10);
   };
 
   // Обработка потери фокуса
@@ -224,6 +242,14 @@ const StageAutocomplete = ({ value, onChange, onBlur, autoFocus = false }) => {
     if (isMouseDownOnDropdown.current) {
       isMouseDownOnDropdown.current = false;
       inputRef.current?.focus();
+      return;
+    }
+    
+    // Если уже выбран этап, не делаем ничего
+    if (hasSelectedStage.current) {
+      hasSelectedStage.current = false;
+      setShowSuggestions(false);
+      if (onBlur) onBlur();
       return;
     }
     
@@ -248,6 +274,9 @@ const StageAutocomplete = ({ value, onChange, onBlur, autoFocus = false }) => {
           alert('Пожалуйста, выберите этап из списка');
           setInputValue('');
           onChange('');
+        } else {
+          // Если несколько совпадений, не меняем значение
+          // Пользователь должен выбрать конкретный этап
         }
       } else {
         onChange('');
