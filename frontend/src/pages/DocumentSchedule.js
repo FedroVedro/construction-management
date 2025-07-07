@@ -3,6 +3,8 @@ import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import CalendarGanttChart from '../components/Dashboard/CalendarGanttChart';
 import StageAutocomplete from '../components/StageAutocomplete';
+import ScheduleFilters from '../components/ScheduleFilters';
+import { saveScheduleOrder, applyScheduleOrder } from '../utils/scheduleOrderStorage';
 
 const DocumentSchedule = () => {
   const [schedules, setSchedules] = useState([]);
@@ -12,6 +14,10 @@ const DocumentSchedule = () => {
   const [tempValue, setTempValue] = useState('');
   const [showCalendar, setShowCalendar] = useState(false);
   const [unsavedRows, setUnsavedRows] = useState({}); // Добавляем хранилище несохраненных строк
+  const [filterStage, setFilterStage] = useState('');
+  const [searchText, setSearchText] = useState('');
+  const [showOnlyDelayed, setShowOnlyDelayed] = useState(false);
+  const [stages, setStages] = useState([]);
   const { user } = useAuth();
 
   const canEdit = user?.role !== 'director' && 
@@ -19,6 +25,7 @@ const DocumentSchedule = () => {
 
   useEffect(() => {
     fetchCities();
+    fetchStages();
   }, []);
 
   useEffect(() => {
@@ -38,7 +45,14 @@ const DocumentSchedule = () => {
       console.error('Error fetching cities:', error);
     }
   };
-
+  const fetchStages = async () => {
+    try {
+      const response = await client.get('/construction-stages?active_only=true');
+      setStages(response.data);
+    } catch (error) {
+      console.error('Error fetching stages:', error);
+    }
+  };
   const fetchSchedules = async () => {
     try {
       const response = await client.get('/schedules', {
@@ -50,12 +64,43 @@ const DocumentSchedule = () => {
       // Добавляем несохраненные строки для этого города, если есть
       const savedSchedules = response.data;
       const cityUnsavedRows = unsavedRows[selectedCity] || [];
-      setSchedules([...savedSchedules, ...cityUnsavedRows]);
+      let allSchedules = [...savedSchedules, ...cityUnsavedRows];
+      
+      // Применяем сохраненный порядок
+      allSchedules = applyScheduleOrder(allSchedules, selectedCity, 'document');
+      
+      setSchedules(allSchedules);
     } catch (error) {
       console.error('Error fetching schedules:', error);
     }
   };
-
+  const getFilteredSchedules = () => {
+    let filtered = schedules;
+    
+    // Фильтр по этапу
+    if (filterStage) {
+      filtered = filtered.filter(s => s.construction_stage === filterStage);
+    }
+    
+    // Поиск
+    if (searchText) {
+      const search = searchText.toLowerCase();
+      filtered = filtered.filter(s => 
+        s.construction_stage?.toLowerCase().includes(search) ||
+        s.sections?.toLowerCase().includes(search)
+      );
+    }
+    
+    // Показать только с задержкой
+    if (showOnlyDelayed) {
+      filtered = filtered.filter(s => {
+        if (!s.actual_end_date || !s.planned_end_date) return false;
+        return new Date(s.actual_end_date) > new Date(s.planned_end_date);
+      });
+    }
+    
+    return filtered;
+  };
   const handleCellClick = (scheduleId, field, value) => {
     if (!canEdit) return;
     setEditingCell(`${scheduleId}-${field}`);
@@ -236,7 +281,43 @@ const DocumentSchedule = () => {
       }
     }
   };
+  const moveRow = (fromIndex, toIndex) => {
+    const filteredSchedules = getFilteredSchedules();
+    if (toIndex < 0 || toIndex >= filteredSchedules.length) return;
+    
+    // Находим реальные индексы в основном массиве
+    const fromSchedule = filteredSchedules[fromIndex];
+    const toSchedule = filteredSchedules[toIndex];
+    
+    const realFromIndex = schedules.findIndex(s => s.id === fromSchedule.id);
+    const realToIndex = schedules.findIndex(s => s.id === toSchedule.id);
+    
+    const newSchedules = [...schedules];
+    const [movedItem] = newSchedules.splice(realFromIndex, 1);
+    newSchedules.splice(realToIndex, 0, movedItem);
+    
+    setSchedules(newSchedules);
+    
+    // Сохраняем новый порядок
+    saveScheduleOrder(selectedCity, 'document', newSchedules);
+    
+    // Обновляем несохраненные строки для города
+    const cityUnsaved = newSchedules.filter(s => 
+      s.id.toString().startsWith('new-') && s.city_id === selectedCity
+    );
+    setUnsavedRows(prev => ({
+      ...prev,
+      [selectedCity]: cityUnsaved
+    }));
+  };
 
+  const moveRowUp = (index) => {
+    moveRow(index, index - 1);
+  };
+
+  const moveRowDown = (index) => {
+    moveRow(index, index + 1);
+  };
   const formatDate = (date) => {
     if (!date) return '';
     return new Date(date).toLocaleDateString('ru-RU');
@@ -338,7 +419,7 @@ const DocumentSchedule = () => {
 
   return (
     <div className="container-fluid">
-      <h1>График выдачи рабочей документации</h1>
+      <h1>График выдачи рабочей документации Генподрядчику</h1>
       
       <div style={{ 
         display: 'flex', 
@@ -376,7 +457,17 @@ const DocumentSchedule = () => {
           {showCalendar ? '📊 Табличный вид' : '📅 Календарный вид'}
         </button>
       </div>
-
+      {!showCalendar && (
+        <ScheduleFilters
+          stages={stages}
+          selectedStage={filterStage}
+          onStageChange={setFilterStage}
+          searchText={searchText}
+          onSearchChange={setSearchText}
+          showOnlyDelayed={showOnlyDelayed}
+          onDelayedChange={setShowOnlyDelayed}
+        />
+      )}
       {showCalendar ? (
         <div className="card-full-width">
           <CalendarGanttChart 
@@ -393,6 +484,7 @@ const DocumentSchedule = () => {
                 <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8f9fa', zIndex: 10 }}>
                   <tr>
                     <th style={{ width: '50px' }}>№</th>
+                    {canEdit && <th style={{ width: '70px' }}>Порядок</th>}
                     <th style={{ minWidth: '200px' }}>Этап строительства</th>
                     <th style={{ minWidth: '300px' }}>Разделы</th>
                     <th style={{ minWidth: '140px' }}>План начало</th>
@@ -403,7 +495,7 @@ const DocumentSchedule = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {schedules.map((schedule, index) => (
+                  {getFilteredSchedules().map((schedule, index) => (
                     <tr key={schedule.id} style={{ 
                       backgroundColor: schedule.isNew ? '#e8f5e9' : 'transparent',
                       transition: 'background-color 0.3s'
@@ -411,6 +503,37 @@ const DocumentSchedule = () => {
                       <td style={{ textAlign: 'center' }}>
                         {schedule.isNew ? '★' : index + 1}
                       </td>
+                      {canEdit && (
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            onClick={() => moveRowUp(index)}
+                            disabled={index === 0}
+                            className="btn btn-sm"
+                            style={{ 
+                              padding: '2px 6px', 
+                              fontSize: '12px',
+                              marginRight: '2px',
+                              opacity: index === 0 ? 0.5 : 1
+                            }}
+                            title="Переместить вверх"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            onClick={() => moveRowDown(index)}
+                            disabled={index === getFilteredSchedules().length - 1}
+                            className="btn btn-sm"
+                            style={{ 
+                              padding: '2px 6px', 
+                              fontSize: '12px',
+                              opacity: index === getFilteredSchedules().length - 1 ? 0.5 : 1
+                            }}
+                            title="Переместить вниз"
+                          >
+                            ↓
+                          </button>
+                        </td>
+                      )}
                       <td>{renderCell(schedule, 'construction_stage', schedule.construction_stage)}</td>
                       <td>{renderCell(schedule, 'sections', schedule.sections)}</td>
                       <td>{renderCell(schedule, 'planned_start_date', schedule.planned_start_date)}</td>
@@ -430,9 +553,9 @@ const DocumentSchedule = () => {
                       )}
                     </tr>
                   ))}
-                  {canEdit && schedules.length === 0 && (
+                  {canEdit && getFilteredSchedules().length === 0 && (
                     <tr>
-                      <td colSpan={8} style={{ textAlign: 'center', padding: '20px', color: '#6c757d' }}>
+                      <td colSpan={9} style={{ textAlign: 'center', padding: '20px', color: '#6c757d' }}>
                         Нет данных. Нажмите "Добавить строку" для начала работы.
                       </td>
                     </tr>

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import logo from '../assets/images/logo.png';
 
 const Navbar = () => {
   const { user, logout } = useAuth();
@@ -35,19 +36,34 @@ const Navbar = () => {
   return (
     <nav style={navStyle}>
       <div style={navContainerStyle}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
-          <Link to="/" style={linkStyle}>Главная</Link>
-          {user?.role === 'admin' && (
-            <>
-              <Link to="/cities" style={linkStyle}>Объекты строительства</Link>
-              <Link to="/construction-stages" style={linkStyle}>Этапы строительства</Link>
-            </>
-          )}
-          <Link to="/document-schedule" style={linkStyle}>График документов</Link>
-          <Link to="/hr-schedule" style={linkStyle}>HR-график</Link>
-          <Link to="/procurement-schedule" style={linkStyle}>График закупок</Link>
-          <Link to="/construction-schedule" style={linkStyle}>График строительства</Link>
-          <Link to="/directive-schedule" style={linkStyle}>Директивный график</Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          {/* Логотип в начале */}
+          <img 
+            src={logo} 
+            alt="Логотип компании" 
+            style={{
+              height: '40px',
+              width: 'auto',
+              objectFit: 'contain',
+              marginRight: '20px',
+              borderRight: '1px solid rgba(255, 255, 255, 0.3)',
+              paddingRight: '20px'
+            }}
+          />
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
+            <Link to="/" style={linkStyle}>Главная</Link>
+            {user?.role === 'admin' && (
+              <>
+                <Link to="/cities" style={linkStyle}>Объекты строительства</Link>
+                <Link to="/construction-stages" style={linkStyle}>Этапы строительства</Link>
+              </>
+            )}
+            <Link to="/document-schedule" style={linkStyle}>График выдачи документации</Link>
+            <Link to="/hr-schedule" style={linkStyle}>HR-график</Link>
+            <Link to="/procurement-schedule" style={linkStyle}>График закупок</Link>
+            <Link to="/construction-schedule" style={linkStyle}>График строительства</Link>
+            <Link to="/directive-schedule" style={linkStyle}>Директивный график</Link>
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <span style={{ marginRight: '20px' }}>

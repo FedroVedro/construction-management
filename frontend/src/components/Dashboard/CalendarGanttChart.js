@@ -8,7 +8,7 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
 
   // Названия отделов для разных типов
   const typeNames = {
-    document: 'Документация',
+    document: 'Выдача документации',
     hr: 'HR',
     procurement: 'Закупки',
     construction: 'Строительство'
@@ -22,13 +22,8 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     construction: '#e74c3c'
   };
 
-  // Функция для получения декады (1-10, 11-20, 21-конец месяца)
-  const getDecade = (date) => {
-    const day = date.getDate();
-    if (day <= 10) return 1;
-    if (day <= 20) return 2;
-    return 3;
-  };
+ 
+
 
   // Функция для получения названия декады
   const getDecadeName = (decade) => {
@@ -146,18 +141,7 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     setProcessedData(sorted);
   }, [schedules, cities, viewMode, sortBy]);
 
-  // Проверка, попадает ли дата в декаду
-  const isDateInDecade = (date, year, month, decade) => {
-    if (date.getFullYear() !== year || date.getMonth() !== month) {
-      return false;
-    }
-    
-    const day = date.getDate();
-    if (decade === 1) return day >= 1 && day <= 10;
-    if (decade === 2) return day >= 11 && day <= 20;
-    if (decade === 3) return day >= 21;
-    return false;
-  };
+
 
   // Проверка, попадает ли период в декаду
   const isPeriodInDecade = (startDate, endDate, year, month, decade) => {
@@ -189,15 +173,19 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     }
     
     // Проверяем фактические даты - добавляем букву Ф
-    if (task.actualStart && task.actualEnd) {
-      if (isPeriodInDecade(task.actualStart, task.actualEnd, year, month, decade)) {
-        content = 'Ф';
-      }
-    } else if (task.actualStart && !task.actualEnd) {
-      // Если есть только дата начала, проверяем от нее до текущей даты
-      const currentDate = new Date();
-      if (isPeriodInDecade(task.actualStart, currentDate, year, month, decade)) {
-        content = 'Ф';
+    if (task.actualStart) {
+      if (task.actualEnd) {
+        // Если есть обе даты, проверяем период
+        if (isPeriodInDecade(task.actualStart, task.actualEnd, year, month, decade)) {
+          content = 'Ф';
+        }
+      } else {
+        // Если есть только дата начала и нет даты конца,
+        // показываем Ф от даты начала и до конца таблицы
+        const decadeStart = new Date(year, month, decade === 1 ? 1 : decade === 2 ? 11 : 21);
+        if (task.actualStart <= decadeStart) {
+          content = 'Ф';
+        }
       }
     }
     
@@ -228,7 +216,7 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
                 style={{ padding: '5px', borderRadius: '4px', border: '1px solid #ddd' }}
               >
                 <option value="all">Все отделы</option>
-                <option value="document">Документация</option>
+                <option value="document">Выдача документации</option>
                 <option value="hr">HR</option>
                 <option value="procurement">Закупки</option>
                 <option value="construction">Строительство</option>
@@ -299,13 +287,13 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
           <thead>
             {/* Строка с месяцами */}
             <tr>
-              <th colSpan="7" style={{ 
+              <th colSpan="8" style={{ 
                 border: '1px solid #ddd', 
                 padding: '8px',
                 backgroundColor: '#f8f9fa',
-                position: 'sticky',
-                left: 0,
-                zIndex: 3
+                zIndex: 4,
+                boxShadow: '2px 0 5px rgba(0,0,0,0.1)', // Добавляем тень для визуального отделения
+                whiteSpace: 'nowrap'
               }}>
                 Информация о работах
               </th>
@@ -345,19 +333,25 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
                 padding: '8px',
                 position: 'sticky',
                 left: 0,
-                zIndex: 2,
+                zIndex: 3,
                 minWidth: '150px'
               }}>Объект</th>
               <th style={{ 
                 border: '1px solid #ddd',
                 backgroundColor: '#f8f9fa',
                 padding: '8px',
+                position: 'sticky',
+                left: '150px', // Для этапа строительства
+                zIndex: 3,
                 minWidth: '150px'
               }}>Этап строительства</th>
               <th style={{ 
                 border: '1px solid #ddd',
                 backgroundColor: '#f8f9fa',
                 padding: '8px',
+                position: 'sticky',
+                left: '300px', // Для наименования работ
+                zIndex: 3,
                 minWidth: '200px'
               }}>Наименование работ</th>
               <th style={{ 
@@ -384,6 +378,12 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
                 padding: '8px',
                 minWidth: '90px'
               }}>Факт начало</th>
+              <th style={{ 
+                border: '1px solid #ddd',
+                backgroundColor: '#f8f9fa',
+                padding: '8px',
+                minWidth: '90px'
+              }}>Факт конец</th>
               {decades.map(decade => (
                 <th 
                   key={decade.key}
@@ -410,14 +410,17 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
                   backgroundColor: 'white',
                   position: 'sticky',
                   left: 0,
-                  zIndex: 1
+                  zIndex: 2
                 }}>
                   {task.cityName}
                 </td>
                 <td style={{ 
                   border: '1px solid #ddd', 
                   padding: '4px',
-                  backgroundColor: 'white'
+                  backgroundColor: 'white',
+                  position: 'sticky',
+                  left: '150px',
+                  zIndex: 2
                 }}>
                   {task.constructionStage}
                 </td>
@@ -425,6 +428,9 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
                   border: '1px solid #ddd', 
                   padding: '4px',
                   backgroundColor: 'white',
+                  position: 'sticky',
+                  left: '300px',
+                  zIndex: 2,
                   whiteSpace: 'pre-wrap',
                   maxWidth: '200px'
                 }}>
@@ -461,6 +467,14 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
                   fontSize: '11px'
                 }}>
                   {task.actualStart ? formatDate(task.actualStart) : '-'}
+                </td>
+                <td style={{ 
+                  border: '1px solid #ddd', 
+                  padding: '4px',
+                  backgroundColor: 'white',
+                  fontSize: '11px'
+                }}>
+                  {task.actualEnd ? formatDate(task.actualEnd) : '-'}
                 </td>
                 {decades.map(decade => {
                   const cell = getCellContent(task, decade.year, decade.month, decade.decade);

@@ -2,6 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import client from '../../api/client';
 
+const typeNamesRu = {
+  document: 'Выдача документации',
+  hr: 'HR',
+  procurement: 'Закупки',
+  construction: 'Строительство'
+};
+
 const MasterCard = ({ cityId }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -80,7 +87,7 @@ const MasterCard = ({ cityId }) => {
             {data.deviations.map((item) => (
               <tr key={item.id}>
                 <td>{item.construction_stage}</td>
-                <td>{item.type}</td>
+                <td>{typeNamesRu[item.type] || item.type}</td>
                 <td className={`status-${item.status.replace('_', '-')}`}>
                   {item.status === 'on_time' ? 'В срок' : 
                    item.status === 'delayed' ? 'Задержка' : 'Опережение'}
