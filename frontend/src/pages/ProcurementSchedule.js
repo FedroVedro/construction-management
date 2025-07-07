@@ -11,6 +11,7 @@ const ProcurementSchedule = () => {
   const [editingCell, setEditingCell] = useState(null);
   const [tempValue, setTempValue] = useState('');
   const [showCalendar, setShowCalendar] = useState(false);
+  const [unsavedRows, setUnsavedRows] = useState({}); // Добавляем хранилище несохраненных строк
   const { user } = useAuth();
 
   const canEdit = user?.role !== 'director' && 
@@ -46,7 +47,10 @@ const ProcurementSchedule = () => {
           city_id: selectedCity 
         }
       });
-      setSchedules(response.data);
+      // Добавляем несохраненные строки для этого города, если есть
+      const savedSchedules = response.data;
+      const cityUnsavedRows = unsavedRows[selectedCity] || [];
+      setSchedules([...savedSchedules, ...cityUnsavedRows]);
     } catch (error) {
       console.error('Error fetching schedules:', error);
     }
@@ -86,12 +90,6 @@ const ProcurementSchedule = () => {
     try {
       const isNewRow = scheduleId.toString().startsWith('new-');
       
-      // Добавляем проверку для пустых значений
-      if (field === 'construction_stage' && (!value || value.trim() === '')) {
-        console.log('Skipping save - empty construction stage');
-        return;
-      }
-      
       if (isNewRow) {
         // Для новых записей обновляем локально
         const updatedSchedules = schedules.map(s => {
@@ -109,38 +107,22 @@ const ProcurementSchedule = () => {
         
         setSchedules(updatedSchedules);
         
-        // Проверяем, заполнены ли все обязательные поля
+        // Обновляем несохраненные строки для города
+        const cityUnsaved = updatedSchedules.filter(s => 
+          s.id.toString().startsWith('new-') && s.city_id === selectedCity
+        );
+        setUnsavedRows(prev => ({
+          ...prev,
+          [selectedCity]: cityUnsaved
+        }));
+        
+        // Проверяем минимальные обязательные поля
         const schedule = updatedSchedules.find(s => s.id === scheduleId);
         
-        // Проверка для каждого типа расписания
-        let canSave = false;
-        
-        if (schedule.schedule_type === 'procurement') {
-          canSave = schedule.construction_stage && 
-                    schedule.work_name && 
-                    schedule.service &&
-                    schedule.responsible_employee && 
-                    schedule.contractor &&
-                    schedule.planned_start_date && 
-                    schedule.planned_end_date;
-        } else if (schedule.schedule_type === 'hr') {
-          canSave = schedule.construction_stage && 
-                    schedule.vacancy && 
-                    schedule.quantity_plan &&
-                    schedule.planned_start_date && 
-                    schedule.planned_end_date;
-        } else if (schedule.schedule_type === 'document') {
-          canSave = schedule.construction_stage && 
-                    schedule.sections &&
-                    schedule.planned_start_date && 
-                    schedule.planned_end_date;
-        } else if (schedule.schedule_type === 'construction') {
-          canSave = schedule.construction_stage && 
-                    schedule.work_name && 
-                    schedule.workers_count &&
-                    schedule.planned_start_date && 
-                    schedule.planned_end_date;
-        }
+        // Упрощенная проверка - только обязательные поля
+        const canSave = schedule.construction_stage && 
+                        schedule.planned_start_date && 
+                        schedule.planned_end_date;
         
         if (canSave) {
           console.log('Creating new schedule with data:', schedule);
@@ -151,25 +133,15 @@ const ProcurementSchedule = () => {
             city_id: parseInt(selectedCity),
             construction_stage: schedule.construction_stage.trim(),
             planned_start_date: schedule.planned_start_date,
-            planned_end_date: schedule.planned_end_date
+            planned_end_date: schedule.planned_end_date,
+            // Добавляем остальные поля только если они заполнены
+            ...(schedule.work_name && { work_name: schedule.work_name.trim() }),
+            ...(schedule.service && { service: schedule.service.trim() }),
+            ...(schedule.responsible_employee && { responsible_employee: schedule.responsible_employee.trim() }),
+            ...(schedule.contractor && { contractor: schedule.contractor.trim() }),
+            ...(schedule.actual_start_date && { actual_start_date: schedule.actual_start_date }),
+            ...(schedule.actual_end_date && { actual_end_date: schedule.actual_end_date })
           };
-          
-          // Добавляем специфичные поля в зависимости от типа
-          if (schedule.schedule_type === 'procurement') {
-            requestData.work_name = schedule.work_name.trim();
-            requestData.service = schedule.service.trim();
-            requestData.responsible_employee = schedule.responsible_employee.trim();
-            requestData.contractor = schedule.contractor.trim();
-          } else if (schedule.schedule_type === 'hr') {
-            requestData.vacancy = schedule.vacancy.trim();
-            requestData.quantity_plan = parseInt(schedule.quantity_plan);
-            requestData.quantity_fact = schedule.quantity_fact ? parseInt(schedule.quantity_fact) : null;
-          } else if (schedule.schedule_type === 'document') {
-            requestData.sections = schedule.sections.trim();
-          } else if (schedule.schedule_type === 'construction') {
-            requestData.work_name = schedule.work_name.trim();
-            requestData.workers_count = parseInt(schedule.workers_count);
-          }
           
           // Создаем новую запись в БД
           const response = await client.post('/schedules', requestData);
@@ -178,6 +150,13 @@ const ProcurementSchedule = () => {
           setSchedules(schedules.map(s => 
             s.id === scheduleId ? { ...response.data, isNew: false } : s
           ));
+          
+          // Удаляем из несохраненных
+          setUnsavedRows(prev => {
+            const updated = { ...prev };
+            updated[selectedCity] = updated[selectedCity]?.filter(row => row.id !== scheduleId) || [];
+            return updated;
+          });
         }
       } else {
         // Обновление существующей записи
@@ -224,7 +203,8 @@ const ProcurementSchedule = () => {
     
     const newRow = {
       id: `new-${Date.now()}`,
-      schedule_type: 'procurement', // или 'hr', 'document', 'construction' в зависимости от компонента
+      schedule_type: 'procurement',
+      city_id: selectedCity, // Важно! Добавляем city_id
       construction_stage: '',
       work_name: '',
       service: '',
@@ -244,6 +224,12 @@ const ProcurementSchedule = () => {
       try {
         if (id.toString().startsWith('new-')) {
           setSchedules(schedules.filter(s => s.id !== id));
+          // Удаляем из несохраненных
+          setUnsavedRows(prev => {
+            const updated = { ...prev };
+            updated[selectedCity] = updated[selectedCity]?.filter(row => row.id !== id) || [];
+            return updated;
+          });
         } else {
           await client.delete(`/schedules/${id}`);
           fetchSchedules();
@@ -279,9 +265,7 @@ const ProcurementSchedule = () => {
           <StageAutocomplete
             value={tempValue}
             onChange={(newValue) => {
-              // Обновляем временное значение
               setTempValue(newValue);
-              // Сохраняем только когда выбран валидный этап
               if (newValue && newValue.trim()) {
                 saveCell(schedule.id, field, newValue);
                 setEditingCell(null);
@@ -289,7 +273,6 @@ const ProcurementSchedule = () => {
               }
             }}
             onBlur={() => {
-              // Если значение не изменилось или пустое, просто закрываем редактирование
               if (!tempValue || tempValue === schedule.construction_stage) {
                 setEditingCell(null);
                 setTempValue('');
@@ -336,7 +319,6 @@ const ProcurementSchedule = () => {
     <div className="container-fluid">
       <h1>График закупок</h1>
       
-      {/* Вкладки городов */}
       <div style={{ 
         display: 'flex', 
         borderBottom: '2px solid #dee2e6',
@@ -365,7 +347,6 @@ const ProcurementSchedule = () => {
           ))}
         </div>
         
-        {/* Кнопка переключения вида */}
         <button
           onClick={() => setShowCalendar(!showCalendar)}
           className="btn btn-secondary"
@@ -375,7 +356,6 @@ const ProcurementSchedule = () => {
         </button>
       </div>
 
-      {/* Показываем либо таблицу, либо календарь */}
       {showCalendar ? (
         <div className="card-full-width">
           <CalendarGanttChart 
@@ -386,7 +366,6 @@ const ProcurementSchedule = () => {
         </div>
       ) : (
         <>
-          {/* Excel-подобная таблица */}
           <div className="card-full-width" style={{ padding: 0, overflow: 'visible' }}>
             <div style={{ overflowX: 'auto', overflowY: 'visible' }}>
               <table className="table" style={{ marginBottom: 0 }}>
