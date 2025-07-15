@@ -21,10 +21,20 @@ def get_master_card_data(
     
     deviations = []
     for schedule in schedules:
+        # Получаем информацию в зависимости от типа
+        detail_info = ""
+        if schedule.schedule_type == "document":
+            detail_info = schedule.sections or ""
+        elif schedule.schedule_type == "hr":
+            detail_info = schedule.vacancy or ""
+        elif schedule.schedule_type in ["procurement", "construction"]:
+            detail_info = schedule.work_name or ""
+        
         deviation_data = {
             "id": schedule.id,
             "type": schedule.schedule_type,
             "construction_stage": schedule.construction_stage,
+            "detail_info": detail_info,  # Добавляем новое поле
             "city_id": schedule.city_id,
             "planned_start": schedule.planned_start_date,
             "planned_end": schedule.planned_end_date,

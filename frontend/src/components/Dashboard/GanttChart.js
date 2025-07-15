@@ -23,10 +23,10 @@ const GanttChart = ({ cityId }) => {
 
   const getColor = (type) => {
     const colors = {
-      document: '#3498db',
-      hr: '#2ecc71',
-      procurement: '#f39c12',
-      construction: '#e74c3c',
+      document: '#6B9BD1',
+      hr: '#6BC788',
+      procurement: '#D4A76A',
+      construction: '#D97B7B',
     };
     return colors[type] || '#95a5a6';
   };

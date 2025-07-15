@@ -16,10 +16,10 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
 
   // Цвета для разных типов отделов
   const typeColors = {
-    document: '#3498db',
-    hr: '#2ecc71', 
-    procurement: '#f39c12',
-    construction: '#e74c3c'
+    document: '#6B9BD1',
+    hr: '#6BC788', 
+    procurement: '#D4A76A',
+    construction: '#D97B7B'
   };
 
  
@@ -243,7 +243,7 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
 
         {/* Легенда */}
         <div style={{ marginTop: '15px' }}>
-          <h4>Легенда:</h4>
+          <h4>Отделы:</h4>
           <div style={{ display: 'flex', gap: '30px', flexWrap: 'wrap' }}>
             {Object.entries(typeColors).map(([type, color]) => (
               <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -282,7 +282,8 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
         <table style={{ 
           borderCollapse: 'collapse', 
           fontSize: '12px',
-          minWidth: '100%'
+          minWidth: '100%',
+          tableLayout: 'fixed' 
         }}>
           <thead>
             {/* Строка с месяцами */}
@@ -392,8 +393,11 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
                     padding: '2px',
                     backgroundColor: '#f8f9fa',
                     width: '40px',
+                    minWidth: '20px', // Добавляем минимальную ширину
+                    maxWidth: '20px', // Добавляем максимальную ширину
                     fontSize: '11px',
-                    textAlign: 'center'
+                    textAlign: 'center',
+                    overflow: 'hidden' // Скрываем переполнение
                   }}
                 >
                   {getDecadeName(decade.decade)}
@@ -485,12 +489,16 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
                         border: '1px solid #ddd',
                         backgroundColor: cell.backgroundColor,
                         width: '40px',
+                        minWidth: '20px', // Добавляем минимальную ширину
+                        maxWidth: '20px', // Добавляем максимальную ширину
                         height: '30px',
                         padding: '0',
                         textAlign: 'center',
                         fontSize: '14px',
                         fontWeight: 'bold',
-                        color: '#000'
+                        color: '#000',
+                        overflow: 'hidden', // Скрываем переполнение
+                        position: 'relative' // Для правильного позиционирования содержимого
                       }}
                     >
                       {cell.content}
