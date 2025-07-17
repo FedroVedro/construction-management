@@ -10,6 +10,11 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
   const [delayInfo, setDelayInfo] = useState(null);
   const tableRef = useRef(null);
   const [arrowPaths, setArrowPaths] = useState([]);
+  const [currentScroll, setCurrentScroll] = useState(0);
+  const [tableWidth, setTableWidth] = useState(0);
+  const [tableHeight, setTableHeight] = useState(0);
+  const scrollRef = useRef(null);
+
 
   // Критические этапы
   const criticalStages = [
@@ -146,7 +151,7 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
             
             positions.push({
               stage: stage.constructionStage,
-              x: ((startRect.left + endRect.right) / 2) - tableRect.left,
+              x: ((startRect.left + endRect.right) / 2) - tableRect.left + tableRef.current.scrollLeft,
               y: rect.top - tableRect.top + rect.height / 2,
               delay: stage.actualEnd && stage.plannedEnd ? 
                 Math.floor((stage.actualEnd - stage.plannedEnd) / (1000 * 60 * 60 * 24)) : 0
@@ -182,20 +187,18 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
   // Обновляем стрелки при изменении данных или прокрутке
   useEffect(() => {
     calculateArrows();
-    
     const handleScroll = () => calculateArrows();
     const tableElement = tableRef.current;
-    
     if (tableElement) {
       tableElement.addEventListener('scroll', handleScroll);
       window.addEventListener('resize', calculateArrows);
-      
       return () => {
         tableElement.removeEventListener('scroll', handleScroll);
         window.removeEventListener('resize', calculateArrows);
       };
     }
   }, [showCriticalPath, criticalPathData, decades]);
+
 
   useEffect(() => {
     if (schedules.length === 0) return;
