@@ -1,6 +1,9 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 
 const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
+  // Состояния
+  const [tableDimensions, setTableDimensions] = useState({ width: 0, height: 0 });
+  const svgRef = useRef(null);
   const [processedData, setProcessedData] = useState([]);
   const [decades, setDecades] = useState([]);
   const [viewMode, setViewMode] = useState(selectedView || 'all');
@@ -10,11 +13,6 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
   const [delayInfo, setDelayInfo] = useState(null);
   const tableRef = useRef(null);
   const [arrowPaths, setArrowPaths] = useState([]);
-  const [currentScroll, setCurrentScroll] = useState(0);
-  const [tableWidth, setTableWidth] = useState(0);
-  const [tableHeight, setTableHeight] = useState(0);
-  const scrollRef = useRef(null);
-
 
   // Критические этапы
   const criticalStages = [
@@ -53,7 +51,7 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     construction: '#D97B7B'
   };
 
-  // Функция для получения названия декады
+  // Функции-хелперы
   const getDecadeName = (decade) => {
     switch(decade) {
       case 1: return 'I';
@@ -63,7 +61,163 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     }
   };
 
-  // Анализ критического пути и задержек
+  const isPeriodInDecade = (startDate, endDate, year, month, decade) => {
+    let decadeStart, decadeEnd;
+    
+    if (decade === 1) {
+      decadeStart = new Date(year, month, 1);
+      decadeEnd = new Date(year, month, 10);
+    } else if (decade === 2) {
+      decadeStart = new Date(year, month, 11);
+      decadeEnd = new Date(year, month, 20);
+    } else {
+      decadeStart = new Date(year, month, 21);
+      decadeEnd = new Date(year, month + 1, 0);
+    }
+    
+    return startDate <= decadeEnd && endDate >= decadeStart;
+  };
+
+  const getCellContent = (task, year, month, decade) => {
+    let backgroundColor = 'transparent';
+    let content = '';
+    let opacity = 1;
+    
+    // Если включен режим критического пути
+    if (showCriticalPath) {
+      const isCritical = criticalStages.includes(task.constructionStage);
+      opacity = isCritical ? 1 : 0.3;
+      
+      if (isCritical && isPeriodInDecade(task.plannedStart, task.plannedEnd, year, month, decade)) {
+        // Проверяем задержку
+        const hasDelay = task.actualEnd && task.actualEnd > task.plannedEnd;
+        backgroundColor = hasDelay ? '#ff6b6b' : task.color;
+      } else if (isPeriodInDecade(task.plannedStart, task.plannedEnd, year, month, decade)) {
+        backgroundColor = task.color;
+      }
+    } else {
+      // Обычный режим
+      if (isPeriodInDecade(task.plannedStart, task.plannedEnd, year, month, decade)) {
+        backgroundColor = task.color;
+      }
+    }
+    
+    // Проверяем фактические даты
+    if (task.actualStart) {
+      if (task.actualEnd) {
+        if (isPeriodInDecade(task.actualStart, task.actualEnd, year, month, decade)) {
+          content = 'Ф';
+        }
+      } else {
+        const decadeStart = new Date(year, month, decade === 1 ? 1 : decade === 2 ? 11 : 21);
+        if (task.actualStart <= decadeStart) {
+          content = 'Ф';
+        }
+      }
+    }
+    
+    return { backgroundColor, content, opacity };
+  };
+
+  const formatDate = (date) => {
+    return date.toLocaleDateString('ru-RU', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric' 
+    });
+  };
+
+  const isCriticalStage = (stageName) => {
+    return criticalStages.includes(stageName);
+  };
+
+  // Функции с useCallback
+  const updateTableDimensions = useCallback(() => {
+    if (tableRef.current) {
+      const table = tableRef.current;
+      setTableDimensions({
+        width: table.scrollWidth,
+        height: table.scrollHeight
+      });
+    }
+  }, []);
+
+  const calculateArrows = useCallback(() => {
+    if (!showCriticalPath || !tableRef.current || criticalPathData.length < 2) {
+      setArrowPaths([]);
+      return;
+    }
+
+    const paths = [];
+    const table = tableRef.current;
+    const tbody = table.querySelector('tbody');
+    const rows = tbody.querySelectorAll('tr');
+    
+    // Находим позиции критических этапов
+    const positions = [];
+    criticalPathData.forEach(stage => {
+      const rowIndex = processedData.findIndex(d => d.id === stage.id);
+      if (rowIndex >= 0 && rows[rowIndex]) {
+        const row = rows[rowIndex];
+        
+        // Находим центр периода работ
+        let startDecade = null;
+        let endDecade = null;
+        
+        decades.forEach((decade, idx) => {
+          if (isPeriodInDecade(stage.plannedStart, stage.plannedEnd, decade.year, decade.month, decade.decade)) {
+            if (startDecade === null) startDecade = idx;
+            endDecade = idx;
+          }
+        });
+        
+        if (startDecade !== null && endDecade !== null) {
+          const cells = row.querySelectorAll('td');
+          const startCell = cells[8 + startDecade]; // 8 - количество информационных колонок
+          const endCell = cells[8 + endDecade];
+          
+          if (startCell && endCell) {
+            // Используем offsetLeft/offsetTop для позиций относительно таблицы
+            const rowOffsetTop = row.offsetTop;
+            const startCellOffsetLeft = startCell.offsetLeft;
+            const endCellOffsetLeft = endCell.offsetLeft + endCell.offsetWidth;
+            
+            positions.push({
+              stage: stage.constructionStage,
+              x: (startCellOffsetLeft + endCellOffsetLeft) / 2,
+              y: rowOffsetTop + row.offsetHeight / 2,
+              delay: stage.actualEnd && stage.plannedEnd ? 
+                Math.floor((stage.actualEnd - stage.plannedEnd) / (1000 * 60 * 60 * 24)) : 0
+            });
+          }
+        }
+      }
+    });
+
+    // Создаем пути для стрелок
+    for (let i = 0; i < positions.length - 1; i++) {
+      const start = positions[i];
+      const end = positions[i + 1];
+      
+      if (start && end) {
+        // Кривая Безье для плавной стрелки
+        const controlX = (start.x + end.x) / 2;
+        const controlY1 = start.y + 50;
+        const controlY2 = end.y - 50;
+        
+        paths.push({
+          d: `M ${start.x} ${start.y} C ${controlX} ${controlY1}, ${controlX} ${controlY2}, ${end.x} ${end.y}`,
+          delay: start.delay > 0,
+          fromStage: start.stage,
+          toStage: end.stage
+        });
+      }
+    }
+    
+    setArrowPaths(paths);
+  }, [showCriticalPath, criticalPathData, processedData, decades, isPeriodInDecade]);
+
+  // useEffect для анализа критического пути
   useEffect(() => {
     if (showCriticalPath && processedData.length > 0) {
       const criticalData = processedData.filter(item => 
@@ -109,97 +263,18 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     }
   }, [showCriticalPath, processedData]);
 
-  // Функция для вычисления позиций стрелок
-  const calculateArrows = () => {
-    if (!showCriticalPath || !tableRef.current || criticalPathData.length < 2) {
-      setArrowPaths([]);
-      return;
-    }
-
-    const paths = [];
-    const table = tableRef.current;
-    const rows = table.querySelectorAll('tbody tr');
-    
-    // Находим позиции критических этапов
-    const positions = [];
-    criticalPathData.forEach(stage => {
-      const rowIndex = processedData.findIndex(d => d.id === stage.id);
-      if (rowIndex >= 0 && rows[rowIndex]) {
-        const row = rows[rowIndex];
-        const rect = row.getBoundingClientRect();
-        const tableRect = table.getBoundingClientRect();
-        
-        // Находим центр периода работ
-        let startDecade = null;
-        let endDecade = null;
-        
-        decades.forEach((decade, idx) => {
-          if (isPeriodInDecade(stage.plannedStart, stage.plannedEnd, decade.year, decade.month, decade.decade)) {
-            if (startDecade === null) startDecade = idx;
-            endDecade = idx;
-          }
-        });
-        
-        if (startDecade !== null && endDecade !== null) {
-          const cells = row.querySelectorAll('td');
-          const startCell = cells[8 + startDecade]; // 8 - количество информационных колонок
-          const endCell = cells[8 + endDecade];
-          
-          if (startCell && endCell) {
-            const startRect = startCell.getBoundingClientRect();
-            const endRect = endCell.getBoundingClientRect();
-            
-            positions.push({
-              stage: stage.constructionStage,
-              x: ((startRect.left + endRect.right) / 2) - tableRect.left + tableRef.current.scrollLeft,
-              y: rect.top - tableRect.top + rect.height / 2,
-              delay: stage.actualEnd && stage.plannedEnd ? 
-                Math.floor((stage.actualEnd - stage.plannedEnd) / (1000 * 60 * 60 * 24)) : 0
-            });
-          }
-        }
-      }
-    });
-
-    // Создаем пути для стрелок
-    for (let i = 0; i < positions.length - 1; i++) {
-      const start = positions[i];
-      const end = positions[i + 1];
-      
-      if (start && end) {
-        // Кривая Безье для плавной стрелки
-        const controlX = (start.x + end.x) / 2;
-        const controlY1 = start.y + 50;
-        const controlY2 = end.y - 50;
-        
-        paths.push({
-          d: `M ${start.x} ${start.y} C ${controlX} ${controlY1}, ${controlX} ${controlY2}, ${end.x} ${end.y}`,
-          delay: start.delay > 0,
-          fromStage: start.stage,
-          toStage: end.stage
-        });
-      }
-    }
-    
-    setArrowPaths(paths);
-  };
-
-  // Обновляем стрелки при изменении данных или прокрутке
+  // useEffect для обновления стрелок
   useEffect(() => {
-    calculateArrows();
-    const handleScroll = () => calculateArrows();
-    const tableElement = tableRef.current;
-    if (tableElement) {
-      tableElement.addEventListener('scroll', handleScroll);
-      window.addEventListener('resize', calculateArrows);
-      return () => {
-        tableElement.removeEventListener('scroll', handleScroll);
-        window.removeEventListener('resize', calculateArrows);
-      };
+    if (showCriticalPath) {
+      // Небольшая задержка для того, чтобы таблица успела отрендериться
+      setTimeout(() => {
+        updateTableDimensions();
+        calculateArrows();
+      }, 100);
     }
-  }, [showCriticalPath, criticalPathData, decades]);
+  }, [showCriticalPath, criticalPathData, decades, processedData, updateTableDimensions, calculateArrows]);
 
-
+  // useEffect для обработки данных
   useEffect(() => {
     if (schedules.length === 0) return;
 
@@ -316,76 +391,24 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     setProcessedData(sorted);
   }, [schedules, cities, viewMode, sortBy]);
 
-  // Проверка, попадает ли период в декаду
-  const isPeriodInDecade = (startDate, endDate, year, month, decade) => {
-    let decadeStart, decadeEnd;
-    
-    if (decade === 1) {
-      decadeStart = new Date(year, month, 1);
-      decadeEnd = new Date(year, month, 10);
-    } else if (decade === 2) {
-      decadeStart = new Date(year, month, 11);
-      decadeEnd = new Date(year, month, 20);
-    } else {
-      decadeStart = new Date(year, month, 21);
-      decadeEnd = new Date(year, month + 1, 0);
-    }
-    
-    return startDate <= decadeEnd && endDate >= decadeStart;
-  };
-
-  const getCellContent = (task, year, month, decade) => {
-    let backgroundColor = 'transparent';
-    let content = '';
-    let opacity = 1;
-    
-    // Если включен режим критического пути
-    if (showCriticalPath) {
-      const isCritical = criticalStages.includes(task.constructionStage);
-      opacity = isCritical ? 1 : 0.3;
+  // useEffect для ResizeObserver
+  useEffect(() => {
+    updateTableDimensions();
       
-      if (isCritical && isPeriodInDecade(task.plannedStart, task.plannedEnd, year, month, decade)) {
-        // Проверяем задержку
-        const hasDelay = task.actualEnd && task.actualEnd > task.plannedEnd;
-        backgroundColor = hasDelay ? '#ff6b6b' : task.color;
-      } else if (isPeriodInDecade(task.plannedStart, task.plannedEnd, year, month, decade)) {
-        backgroundColor = task.color;
-      }
-    } else {
-      // Обычный режим
-      if (isPeriodInDecade(task.plannedStart, task.plannedEnd, year, month, decade)) {
-        backgroundColor = task.color;
-      }
-    }
-    
-    // Проверяем фактические даты
-    if (task.actualStart) {
-      if (task.actualEnd) {
-        if (isPeriodInDecade(task.actualStart, task.actualEnd, year, month, decade)) {
-          content = 'Ф';
-        }
-      } else {
-        const decadeStart = new Date(year, month, decade === 1 ? 1 : decade === 2 ? 11 : 21);
-        if (task.actualStart <= decadeStart) {
-          content = 'Ф';
-        }
-      }
-    }
-    
-    return { backgroundColor, content, opacity };
-  };
-
-  const formatDate = (date) => {
-    return date.toLocaleDateString('ru-RU', { 
-      day: '2-digit', 
-      month: '2-digit', 
-      year: 'numeric' 
+    const resizeObserver = new ResizeObserver(() => {
+      updateTableDimensions();
     });
-  };
-
-  const isCriticalStage = (stageName) => {
-    return criticalStages.includes(stageName);
-  };
+      
+    if (tableRef.current) {
+      resizeObserver.observe(tableRef.current);
+    }
+      
+    return () => {
+      if (tableRef.current) {
+        resizeObserver.unobserve(tableRef.current);
+      }
+    };
+  }, [processedData, decades, updateTableDimensions]);
 
   return (
     <div style={{ width: '100%', position: 'relative' }}>
@@ -531,19 +554,23 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
       </div>
 
       {/* Таблица с календарной сеткой */}
-      <div style={{ position: 'relative', overflowX: 'auto' }}>
+      <div style={{ position: 'relative', overflowX: 'auto', overflowY: 'visible' }}>
         {/* SVG для стрелок */}
         {showCriticalPath && arrowPaths.length > 0 && (
           <svg 
+            ref={svgRef}
             style={{
               position: 'absolute',
               top: 0,
               left: 0,
-              width: '100%',
-              height: '100%',
+              width: tableDimensions.width || '100%',
+              height: tableDimensions.height || '100%',
               pointerEvents: 'none',
-              zIndex: 5
+              zIndex: 5,
+              overflow: 'visible'
             }}
+            viewBox={`0 0 ${tableDimensions.width} ${tableDimensions.height}`}
+            preserveAspectRatio="none"
           >
             <defs>
               <marker
