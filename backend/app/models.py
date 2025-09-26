@@ -80,3 +80,29 @@ class Schedule(Base):
     city = relationship("City", back_populates="schedules")
     creator = relationship("User", back_populates="schedules")
     stage = relationship("ConstructionStage", back_populates="schedules")
+
+class ProjectOfficeTask(Base):
+    __tablename__ = "project_office_tasks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    city_id = Column(Integer, ForeignKey("cities.id"), nullable=False)
+
+    set_date = Column(DateTime, nullable=True)  # Дата постановки
+    initiator = Column(String, nullable=True)  # Постановщик
+    task = Column(Text, nullable=True)  # Задача
+    work_name = Column(String, nullable=True)  # Наименование работ
+    responsible = Column(String, nullable=True)  # Ответственный
+    participants = Column(Text, nullable=True)  # Участники
+    due_date = Column(Text, nullable=True)  # Срок (свободный текст)
+    status = Column(String, nullable=True)  # Статус
+    completion_date = Column(DateTime, nullable=True)  # Дата выполнения
+    delay_reason = Column(Text, nullable=True)  # Причина переноса срока
+    comments = Column(Text, nullable=True)  # Комментарии
+    is_done = Column(Boolean, default=False)  # Галочка выполнено
+    result = Column(Text, nullable=True)  # Результат работы
+    text_color = Column(String, nullable=True)  # Цвет текста строки (hex)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    city = relationship("City")

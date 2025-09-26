@@ -163,3 +163,94 @@ class Schedule(ScheduleBase):
     
     class Config:
         from_attributes = True
+
+# Project Office Task schemas
+class ProjectOfficeTaskBase(BaseModel):
+    city_id: int
+    set_date: Optional[Union[datetime, str]] = None
+    initiator: Optional[str] = None
+    work_name: Optional[str] = None
+    task: Optional[str] = None
+    responsible: Optional[str] = None
+    participants: Optional[str] = None
+    due_date: Optional[str] = None
+    status: Optional[str] = None
+    completion_date: Optional[Union[datetime, str]] = None
+    delay_reason: Optional[str] = None
+    comments: Optional[str] = None
+    is_done: Optional[bool] = False
+    result: Optional[str] = None
+    text_color: Optional[str] = None
+
+    @validator('set_date', 'completion_date', pre=True)
+    def parse_optional_date(cls, v):
+        if v is None or v == '':
+            return None
+        if isinstance(v, str):
+            try:
+                return datetime.fromisoformat(v.replace('Z', '+00:00'))
+            except:
+                try:
+                    return datetime.strptime(v, '%Y-%m-%d')
+                except:
+                    raise ValueError(f'Неверный формат даты: {v}')
+        return v
+
+    @validator('status')
+    def validate_status(cls, v):
+        if v is None:
+            return v
+        allowed = ['Отложено', 'В работе', 'Не актуально', 'Выполнено']
+        if v not in allowed:
+            raise ValueError(f"Недопустимый статус: {v}. Разрешены: {allowed}")
+        return v
+
+class ProjectOfficeTaskCreate(ProjectOfficeTaskBase):
+    pass
+
+class ProjectOfficeTaskUpdate(BaseModel):
+    set_date: Optional[Union[datetime, str]] = None
+    initiator: Optional[str] = None
+    work_name: Optional[str] = None
+    task: Optional[str] = None
+    responsible: Optional[str] = None
+    participants: Optional[str] = None
+    due_date: Optional[str] = None
+    status: Optional[str] = None
+    completion_date: Optional[Union[datetime, str]] = None
+    delay_reason: Optional[str] = None
+    comments: Optional[str] = None
+    is_done: Optional[bool] = None
+    result: Optional[str] = None
+    text_color: Optional[str] = None
+
+    @validator('set_date', 'completion_date', pre=True)
+    def parse_optional_date_update(cls, v):
+        if v is None or v == '':
+            return None
+        if isinstance(v, str):
+            try:
+                return datetime.fromisoformat(v.replace('Z', '+00:00'))
+            except:
+                try:
+                    return datetime.strptime(v, '%Y-%m-%d')
+                except:
+                    raise ValueError(f'Неверный формат даты: {v}')
+        return v
+
+    @validator('status')
+    def validate_status_update(cls, v):
+        if v is None:
+            return v
+        allowed = ['Отложено', 'В работе', 'Не актуально', 'Выполнено']
+        if v not in allowed:
+            raise ValueError(f"Недопустимый статус: {v}. Разрешены: {allowed}")
+        return v
+
+class ProjectOfficeTask(ProjectOfficeTaskBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

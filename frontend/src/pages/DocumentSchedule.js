@@ -486,7 +486,7 @@ const DocumentSchedule = () => {
                     <th style={{ width: '50px' }}>№</th>
                     {canEdit && <th style={{ width: '70px' }}>Порядок</th>}
                     <th style={{ minWidth: '200px' }}>Этап строительства</th>
-                    <th style={{ minWidth: '300px' }}>Разделы</th>
+                    <th style={{ minWidth: '300px' }}>Наименование работ</th>
                     <th style={{ minWidth: '140px' }}>План начало</th>
                     <th style={{ minWidth: '140px' }}>План конец</th>
                     <th style={{ minWidth: '140px' }}>Факт начало</th>
