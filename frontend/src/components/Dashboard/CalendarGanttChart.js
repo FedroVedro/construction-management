@@ -127,6 +127,13 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     });
   };
 
+  const formatPrice = (value) => {
+    if (!value || value === '') return '-';
+    const num = parseFloat(value);
+    if (isNaN(num)) return value;
+    return num.toLocaleString('ru-RU') + ' руб';
+  };
+
   const isCriticalStage = (stageName) => {
     return criticalStages.includes(stageName);
   };
@@ -356,6 +363,8 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
           plannedEnd: new Date(schedule.planned_end_date),
           actualStart: schedule.actual_start_date ? new Date(schedule.actual_start_date) : null,
           actualEnd: schedule.actual_end_date ? new Date(schedule.actual_end_date) : null,
+          costPlan: schedule.cost_plan,
+          costFact: schedule.cost_fact,
           color: typeColors[schedule.schedule_type] || '#95a5a6'
         };
       });
@@ -644,7 +653,7 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
           <thead>
             {/* Строка с месяцами */}
             <tr>
-              <th colSpan="8" style={{ 
+              <th colSpan="10" style={{ 
                 border: '1px solid #ddd', 
                 padding: '8px',
                 backgroundColor: '#f8f9fa',
@@ -742,6 +751,18 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
                 padding: '8px',
                 minWidth: '90px'
               }}>Факт конец</th>
+              <th style={{ 
+                border: '1px solid #ddd',
+                backgroundColor: '#f8f9fa',
+                padding: '8px',
+                minWidth: '120px'
+              }}>Стоимость план</th>
+              <th style={{ 
+                border: '1px solid #ddd',
+                backgroundColor: '#f8f9fa',
+                padding: '8px',
+                minWidth: '120px'
+              }}>Стоимость факт</th>
               {decades.map(decade => (
                 <th 
                   key={decade.key}
@@ -864,6 +885,24 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
                     fontWeight: hasDelay ? 'bold' : 'normal'
                   }}>
                     {task.actualEnd ? formatDate(task.actualEnd) : '-'}
+                  </td>
+                  <td style={{ 
+                    border: '1px solid #ddd', 
+                    padding: '4px',
+                    backgroundColor: 'white',
+                    fontSize: '11px',
+                    textAlign: 'right'
+                  }}>
+                    {formatPrice(task.costPlan)}
+                  </td>
+                  <td style={{ 
+                    border: '1px solid #ddd', 
+                    padding: '4px',
+                    backgroundColor: 'white',
+                    fontSize: '11px',
+                    textAlign: 'right'
+                  }}>
+                    {formatPrice(task.costFact)}
                   </td>
                   {decades.map(decade => {
                     const cell = getCellContent(task, decade.year, decade.month, decade.decade);

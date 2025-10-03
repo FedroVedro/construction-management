@@ -78,6 +78,8 @@ class ScheduleBase(BaseModel):
     planned_end_date: Union[datetime, str]
     actual_start_date: Optional[Union[datetime, str]] = None
     actual_end_date: Optional[Union[datetime, str]] = None
+    cost_plan: Optional[float] = None
+    cost_fact: Optional[float] = None
     
     # Document schedule
     sections: Optional[str] = None
@@ -137,6 +139,8 @@ class ScheduleUpdate(BaseModel):
     workers_count: Optional[int] = None
     planned_start_date: Optional[Union[datetime, str]] = None
     planned_end_date: Optional[Union[datetime, str]] = None
+    cost_plan: Optional[float] = None
+    cost_fact: Optional[float] = None
     
     @validator('planned_start_date', 'planned_end_date', 'actual_start_date', 'actual_end_date', pre=True)
     def parse_date(cls, v):
@@ -169,6 +173,7 @@ class ProjectOfficeTaskBase(BaseModel):
     city_id: int
     set_date: Optional[Union[datetime, str]] = None
     initiator: Optional[str] = None
+    construction_stage: Optional[str] = None
     work_name: Optional[str] = None
     task: Optional[str] = None
     responsible: Optional[str] = None

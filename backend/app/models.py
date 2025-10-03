@@ -57,6 +57,10 @@ class Schedule(Base):
     actual_start_date = Column(DateTime, nullable=True)
     actual_end_date = Column(DateTime, nullable=True)
     
+    # Общие бюджетные показатели
+    cost_plan = Column(Float, nullable=True)
+    cost_fact = Column(Float, nullable=True)
+    
     # Document schedule specific
     sections = Column(Text, nullable=True)
     

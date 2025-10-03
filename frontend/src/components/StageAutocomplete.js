@@ -221,6 +221,10 @@ const StageAutocomplete = ({ value, onChange, onBlur, autoFocus = false }) => {
           selectStage(suggestions[0]);
         }
         break;
+
+      default:
+        // Игнорируем другие клавиши
+        break;
     }
   };
 
@@ -302,7 +306,6 @@ const StageAutocomplete = ({ value, onChange, onBlur, autoFocus = false }) => {
         autoFocus={autoFocus}
         style={{
           width: '100%',
-          border: '2px solid #007bff',
           padding: '4px',
           fontSize: '14px',
           cursor: 'text'
@@ -364,8 +367,8 @@ const DropdownPortal = ({
           style={{
             padding: '8px 12px',
             cursor: 'pointer',
-            backgroundColor: index === selectedIndex ? '#007bff' : 'white',
-            color: index === selectedIndex ? 'white' : 'black',
+            backgroundColor: index === selectedIndex ? '#f8f9fa' : 'white',
+            color: 'black',
             borderBottom: index < suggestions.length - 1 ? '1px solid #f0f0f0' : 'none',
             transition: 'background-color 0.1s ease',
             userSelect: 'none'
@@ -377,7 +380,7 @@ const DropdownPortal = ({
           {stage.description && (
             <div style={{
               fontSize: '12px',
-              color: index === selectedIndex ? '#e0e0e0' : '#666',
+              color: '#666',
               marginTop: '2px',
               pointerEvents: 'none'
             }}>

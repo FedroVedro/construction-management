@@ -13,23 +13,43 @@ const ProjectOffice = () => {
   const [cities, setCities] = useState([]);
   const [selectedCity, setSelectedCity] = useState(null);
   const [tasks, setTasks] = useState([]);
-  const [editingCell, setEditingCell] = useState(null);
-  const [tempValue, setTempValue] = useState('');
   const [searchText, setSearchText] = useState('');
   const [expandedComments, setExpandedComments] = useState({});
   const [workNames, setWorkNames] = useState([]);
-  const [activeWorkNameTaskId, setActiveWorkNameTaskId] = useState(null);
+  const [workNamePopup, setWorkNamePopup] = useState(null); // { taskId, suggestions, rect, up }
+  const [schedulesData, setSchedulesData] = useState([]); // Данные графиков для поиска этапов
+  const [stages, setStages] = useState([]); // Этапы строительства
 
   useEffect(() => {
     fetchCities();
     fetchWorkNames();
+    fetchStages();
   }, []);
+
+  useEffect(() => {
+    if (selectedCity) {
+      fetchSchedulesData();
+    }
+  }, [selectedCity]);
 
   useEffect(() => {
     if (selectedCity) {
       fetchTasks();
     }
   }, [selectedCity]);
+
+  // Обновить этапы строительства для всех задач при загрузке данных графиков
+  useEffect(() => {
+    if (schedulesData.length > 0 && tasks.length > 0) {
+      setTasks(prev => prev.map(task => {
+        if (task.work_name && !task.construction_stage) {
+          const constructionStage = findConstructionStage(task.work_name);
+          return { ...task, construction_stage: constructionStage };
+        }
+        return task;
+      }));
+    }
+  }, [schedulesData, tasks.length]);
 
   const fetchCities = async () => {
     try {
@@ -48,6 +68,8 @@ const ProjectOffice = () => {
       setTasks(ordered);
       // Обновить список Наименований работ из текущих задач
       mergeWorkNamesFromTasks(ordered);
+      // Загрузить данные графиков для поиска этапов
+      await fetchSchedulesData();
     } catch (e) {
       console.error(e);
     }
@@ -67,11 +89,31 @@ const ProjectOffice = () => {
     return () => clearTimeout(id);
   }, [tasks, expandedComments]);
 
+  const fetchSchedulesData = async () => {
+    try {
+      const res = await client.get('/schedules', { params: { schedule_type: 'procurement', city_id: selectedCity } });
+      const res2 = await client.get('/schedules', { params: { schedule_type: 'construction', city_id: selectedCity } });
+      const res3 = await client.get('/schedules', { params: { schedule_type: 'document', city_id: selectedCity } });
+      const res4 = await client.get('/schedules', { params: { schedule_type: 'hr', city_id: selectedCity } });
+      
+      const allSchedules = [
+        ...(res.data || []),
+        ...(res2.data || []),
+        ...(res3.data || []),
+        ...(res4.data || [])
+      ];
+      setSchedulesData(allSchedules);
+    } catch (e) {
+      console.error('Error fetching schedules data', e);
+    }
+  };
+
   const fetchWorkNames = async () => {
     try {
       const res = await client.get('/schedules', { params: { schedule_type: 'procurement' } });
       const res2 = await client.get('/schedules', { params: { schedule_type: 'construction' } });
       const res3 = await client.get('/schedules', { params: { schedule_type: 'document' } });
+      const res4 = await client.get('/schedules', { params: { schedule_type: 'hr' } });
       const names = new Set();
       const addName = (val) => {
         if (typeof val !== 'string') return;
@@ -82,11 +124,47 @@ const ProjectOffice = () => {
       (res.data || []).forEach(s => { addName(s.work_name); addName(s.sections); });
       (res2.data || []).forEach(s => { addName(s.work_name); addName(s.sections); });
       (res3.data || []).forEach(s => { addName(s.work_name); addName(s.sections); });
+      (res4.data || []).forEach(s => { addName(s.work_name); addName(s.vacancy); });
       const sorted = Array.from(names).sort((a, b) => a.localeCompare(b, 'ru'));
       setWorkNames(sorted);
     } catch (e) {
       console.error('Error fetching work names', e);
     }
+  };
+
+  const fetchStages = async () => {
+    try {
+      const response = await client.get('/construction-stages?active_only=true');
+      setStages(response.data);
+    } catch (error) {
+      console.error('Error fetching stages:', error);
+    }
+  };
+
+  const findConstructionStage = (workName) => {
+    if (!workName || !workName.trim() || !schedulesData.length) return null;
+    
+    const trimmedWorkName = workName.trim();
+    
+    // Ищем точное совпадение по work_name или sections
+    for (const schedule of schedulesData) {
+      if ((schedule.work_name && schedule.work_name.trim() === trimmedWorkName) ||
+          (schedule.sections && schedule.sections.trim() === trimmedWorkName)) {
+        return schedule.construction_stage || null;
+      }
+    }
+    
+    return null;
+  };
+
+  const getStageNumber = (constructionStage) => {
+    if (!constructionStage || !stages.length) return '';
+    
+    const stageIndex = stages.findIndex(stage => 
+      stage.name === constructionStage
+    );
+    
+    return stageIndex >= 0 ? `${stageIndex + 1}.` : '';
   };
 
   const mergeWorkNamesFromTasks = (list) => {
@@ -104,10 +182,15 @@ const ProjectOffice = () => {
     const q = (searchText || '').toLowerCase().trim();
     if (!q) return tasks;
     return tasks.filter(t => (
+      (t.work_name || '').toLowerCase().includes(q) ||
       (t.task || '').toLowerCase().includes(q) ||
       (t.responsible || '').toLowerCase().includes(q) ||
       (t.participants || '').toLowerCase().includes(q) ||
-      (t.comments || '').toLowerCase().includes(q)
+      (t.comments || '').toLowerCase().includes(q) ||
+      (t.initiator || '').toLowerCase().includes(q) ||
+      (t.delay_reason || '').toLowerCase().includes(q) ||
+      (t.result || '').toLowerCase().includes(q) ||
+      (t.construction_stage || '').toLowerCase().includes(q)
     ));
   }, [tasks, searchText]);
 
@@ -194,10 +277,7 @@ const ProjectOffice = () => {
       // Текстовые области обрабатываются отдельным хендлером
       saveCell(taskId, field, tasks.find(t => t.id === taskId)?.[field] ?? '');
     }
-    if (e.key === 'Escape') {
-      setEditingCell(null);
-      setTempValue('');
-    }
+    // Escape не требуется обрабатывать, так как редактирование inline
   };
 
   const onTextareaKeyDown = (e) => {
@@ -258,44 +338,53 @@ const ProjectOffice = () => {
         ? workNames.filter(name => name.toLowerCase().includes(query))
         : workNames
       );
-      const isActive = activeWorkNameTaskId === task.id;
+      const openPopupFromTarget = (el) => {
+        if (!el || !el.getBoundingClientRect) return;
+        const rect = el.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const up = spaceBelow < 240;
+        setWorkNamePopup({ taskId: task.id, suggestions, rect, up });
+      };
+
       return (
         <div style={{ position: 'relative' }}>
           <textarea
             value={task.work_name || ''}
             placeholder="Наименование работ"
-            onFocus={() => setActiveWorkNameTaskId(task.id)}
+            onFocus={(e) => { openPopupFromTarget(e.target); }}
             onChange={(e) => {
               const el = e.target;
               el.style.height = 'auto';
               el.style.height = `${el.scrollHeight}px`;
-              setTasks(prev => prev.map(t => t.id === task.id ? { ...t, work_name: e.target.value } : t));
+              const newWorkName = e.target.value;
+              
+              // Найти соответствующий этап строительства
+              const constructionStage = findConstructionStage(newWorkName);
+              
+              setTasks(prev => prev.map(t => t.id === task.id ? { 
+                ...t, 
+                work_name: newWorkName,
+                construction_stage: constructionStage
+              } : t));
+              
+              // обновить список и позицию попапа
+              const q = (newWorkName || '').toLowerCase();
+              const sugg = (q.length >= 2 ? workNames.filter(name => name.toLowerCase().includes(q)) : workNames);
+              const rect = el.getBoundingClientRect();
+              const spaceBelow = window.innerHeight - rect.bottom;
+              const up = spaceBelow < 240;
+              setWorkNamePopup({ taskId: task.id, suggestions: sugg, rect, up });
             }}
             onBlur={() => {
               // Даем шанс выбрать пункт через onMouseDown
-              setTimeout(() => setActiveWorkNameTaskId(prev => (prev === task.id ? null : prev)), 100);
               saveCell(task.id, 'work_name', task.work_name || '');
+              setTimeout(() => setWorkNamePopup(prev => (prev && prev.taskId === task.id ? null : prev)), 120);
             }}
             onKeyDown={onTextareaKeyDown}
             style={{ width: '100%', resize: 'none', overflow: 'hidden', lineHeight: '1.4' }}
             rows={6}
           />
-          {isActive && suggestions.length > 0 && (
-            <div style={{ position: 'absolute', zIndex: 20, background: '#fff', border: '1px solid #e5e7eb', boxShadow: '0 6px 16px rgba(0,0,0,0.08)', borderRadius: 6, marginTop: 4, maxHeight: 220, overflowY: 'auto', width: '100%' }}>
-              {suggestions.map(name => (
-                <div
-                  key={name}
-                  style={{ padding: '6px 10px', cursor: 'pointer' }}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, work_name: name } : t));
-                    saveCell(task.id, 'work_name', name);
-                    setActiveWorkNameTaskId(null);
-                  }}
-                >{name}</div>
-              ))}
-            </div>
-          )}
+          {/* список выводится глобально фиксированной позицией ниже */}
         </div>
       );
     }
@@ -448,7 +537,7 @@ const ProjectOffice = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <input
             type="text"
-            placeholder="Поиск: задача, ответственный, участники, комментарии"
+            placeholder="Поиск: задача, ответственный, участники, комментарии, этап строительства"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             className="form-control"
@@ -464,6 +553,7 @@ const ProjectOffice = () => {
             <tr>
               <th style={{ minWidth: '140px' }}>Дата постановки</th>
               <th style={{ minWidth: '140px' }}>Постановщик</th>
+              <th style={{ minWidth: '200px' }}>Этап строительства</th>
               <th style={{ minWidth: '260px' }}>Наименование работ</th>
               <th style={{ minWidth: '260px' }}>Задача</th>
               <th style={{ minWidth: '160px' }}>Ответственный</th>
@@ -488,6 +578,20 @@ const ProjectOffice = () => {
                   </div>
                 </td>
                 <td>{renderEditable(t, 'initiator')}</td>
+                <td>
+                  <input 
+                    type="text" 
+                    value={t.construction_stage ? `${getStageNumber(t.construction_stage)} ${t.construction_stage}` : ''} 
+                    readOnly 
+                    style={{ 
+                      width: '100%', 
+                      background: t.construction_stage ? '#e8f5e8' : '#f1f3f5',
+                      border: t.construction_stage ? '1px solid #28a745' : '1px solid #ced4da',
+                      color: t.construction_stage ? '#155724' : '#6c757d'
+                    }} 
+                    placeholder="Этап строительства"
+                  />
+                </td>
                 <td>{renderEditable(t, 'work_name')}</td>
                 <td>{renderEditable(t, 'task')}</td>
                 <td>{renderEditable(t, 'responsible')}</td>
@@ -513,6 +617,43 @@ const ProjectOffice = () => {
           </tbody>
         </table>
       </div>
+      {workNamePopup && workNamePopup.suggestions && workNamePopup.suggestions.length > 0 && (
+        <div
+          style={{
+            position: 'fixed',
+            left: workNamePopup.rect.left,
+            width: workNamePopup.rect.width,
+            top: workNamePopup.up ? undefined : (workNamePopup.rect.bottom + 4),
+            bottom: workNamePopup.up ? (window.innerHeight - workNamePopup.rect.top + 4) : undefined,
+            zIndex: 9999,
+            background: '#fff',
+            border: '1px solid #e5e7eb',
+            boxShadow: '0 6px 16px rgba(0,0,0,0.08)',
+            borderRadius: 6,
+            maxHeight: 220,
+            overflowY: 'auto'
+          }}
+        >
+          {workNamePopup.suggestions.map(name => (
+            <div
+              key={name}
+              style={{ padding: '6px 10px', cursor: 'pointer' }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                const id = workNamePopup.taskId;
+                const constructionStage = findConstructionStage(name);
+                setTasks(prev => prev.map(t => t.id === id ? { 
+                  ...t, 
+                  work_name: name,
+                  construction_stage: constructionStage
+                } : t));
+                saveCell(id, 'work_name', name);
+                setWorkNamePopup(null);
+              }}
+            >{name}</div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

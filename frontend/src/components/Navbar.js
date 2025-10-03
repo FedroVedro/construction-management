@@ -64,6 +64,9 @@ const Navbar = () => {
             <Link to="/construction-schedule" style={linkStyle}>График строительства</Link>
             <Link to="/directive-schedule" style={linkStyle}>Директивный график</Link>
             <Link to="/project-office" style={linkStyle}>Проектный офис</Link>
+            {user?.role === 'admin' && (
+              <Link to="/telegram-settings" style={linkStyle}>Настройки Telegram</Link>
+            )}
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center' }}>

@@ -10,8 +10,6 @@ const DocumentSchedule = () => {
   const [schedules, setSchedules] = useState([]);
   const [cities, setCities] = useState([]);
   const [selectedCity, setSelectedCity] = useState(null);
-  const [editingCell, setEditingCell] = useState(null);
-  const [tempValue, setTempValue] = useState('');
   const [showCalendar, setShowCalendar] = useState(false);
   const [unsavedRows, setUnsavedRows] = useState({}); // Добавляем хранилище несохраненных строк
   const [filterStage, setFilterStage] = useState('');
@@ -33,6 +31,21 @@ const DocumentSchedule = () => {
       fetchSchedules();
     }
   }, [selectedCity]);
+
+  // Автоматическая настройка высоты textarea после загрузки данных
+  useEffect(() => {
+    const adjustTextareaHeights = () => {
+      const textareas = document.querySelectorAll('textarea[data-auto-resize="true"]');
+      textareas.forEach((el) => {
+        el.style.height = 'auto';
+        el.style.height = `${el.scrollHeight}px`;
+      });
+    };
+    
+    // Дать DOM обновиться
+    const timeoutId = setTimeout(adjustTextareaHeights, 0);
+    return () => clearTimeout(timeoutId);
+  }, [schedules]);
 
   const fetchCities = async () => {
     try {
@@ -101,35 +114,6 @@ const DocumentSchedule = () => {
     
     return filtered;
   };
-  const handleCellClick = (scheduleId, field, value) => {
-    if (!canEdit) return;
-    setEditingCell(`${scheduleId}-${field}`);
-    setTempValue(value || '');
-  };
-
-  const handleCellChange = (e) => {
-    setTempValue(e.target.value);
-  };
-
-  const handleCellBlur = async (scheduleId, field) => {
-    if (editingCell === `${scheduleId}-${field}`) {
-      await saveCell(scheduleId, field, tempValue);
-      setEditingCell(null);
-      setTempValue('');
-    }
-  };
-
-  const handleKeyPress = async (e, scheduleId, field) => {
-    if (e.key === 'Enter') {
-      await saveCell(scheduleId, field, tempValue);
-      setEditingCell(null);
-      setTempValue('');
-    }
-    if (e.key === 'Escape') {
-      setEditingCell(null);
-      setTempValue('');
-    }
-  };
 
   const saveCell = async (scheduleId, field, value) => {
     try {
@@ -142,6 +126,8 @@ const DocumentSchedule = () => {
             const updated = { ...s };
             if (field === 'quantity_plan' || field === 'quantity_fact' || field === 'workers_count') {
               updated[field] = value ? parseInt(value) : '';
+            } else if (field === 'cost_plan' || field === 'cost_fact') {
+              updated[field] = value === '' ? '' : (isNaN(parseFloat(value)) ? '' : parseFloat(value));
             } else {
               updated[field] = value;
             }
@@ -206,6 +192,8 @@ const DocumentSchedule = () => {
         
         if (field === 'quantity_plan' || field === 'quantity_fact' || field === 'workers_count') {
           processedValue = value ? parseInt(value) : null;
+        } else if (field === 'cost_plan' || field === 'cost_fact') {
+          processedValue = (value === '' || value == null) ? null : (isNaN(parseFloat(value)) ? null : parseFloat(value));
         } else if (typeof value === 'string') {
           processedValue = value.trim() || null;
         }
@@ -318,10 +306,6 @@ const DocumentSchedule = () => {
   const moveRowDown = (index) => {
     moveRow(index, index + 1);
   };
-  const formatDate = (date) => {
-    if (!date) return '';
-    return new Date(date).toLocaleDateString('ru-RU');
-  };
 
   const formatDateForInput = (date) => {
     if (!date) return '';
@@ -329,91 +313,113 @@ const DocumentSchedule = () => {
     return d.toISOString().split('T')[0];
   };
 
+  const formatPrice = (value) => {
+    if (!value || value === '') return '';
+    const num = parseFloat(value);
+    if (isNaN(num)) return value;
+    return num.toLocaleString('ru-RU') + ' руб';
+  };
+
   const renderCell = (schedule, field, value) => {
-    const cellId = `${schedule.id}-${field}`;
-    const isEditing = editingCell === cellId;
     const isDateField = field.includes('date');
+    const isNumberField = field.includes('cost');
 
-    if (isEditing) {
-      if (field === 'construction_stage') {
-        return (
-          <StageAutocomplete
-            value={tempValue}
-            onChange={(newValue) => {
-              setTempValue(newValue);
-              if (newValue && newValue.trim()) {
-                saveCell(schedule.id, field, newValue);
-                setEditingCell(null);
-                setTempValue('');
-              }
-            }}
-            onBlur={() => {
-              if (!tempValue || tempValue === schedule.construction_stage) {
-                setEditingCell(null);
-                setTempValue('');
-              }
-            }}
-            autoFocus={true}
-          />
-        );
-      }
-
-      if (field === 'sections') {
-        return (
-          <textarea
-            value={tempValue}
-            onChange={handleCellChange}
-            onBlur={() => handleCellBlur(schedule.id, field)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                setEditingCell(null);
-                setTempValue('');
-              }
-            }}
-            autoFocus
-            style={{
-              width: '100%',
-              border: '2px solid #007bff',
-              padding: '4px',
-              fontSize: '14px',
-              minHeight: '60px',
-              resize: 'vertical'
-            }}
-          />
-        );
-      }
-
+    if (field === 'construction_stage') {
       return (
-        <input
-          type={isDateField ? 'date' : 'text'}
-          value={tempValue}
-          onChange={handleCellChange}
-          onBlur={() => handleCellBlur(schedule.id, field)}
-          onKeyDown={(e) => handleKeyPress(e, schedule.id, field)}
-          autoFocus
-          style={{
-            width: '100%',
-            border: '2px solid #007bff',
-            padding: '4px',
-            fontSize: '14px'
+        <StageAutocomplete
+          value={value || ''}
+          onChange={(newValue) => {
+            if (newValue && newValue.trim()) {
+              saveCell(schedule.id, field, newValue);
+            }
+          }}
+          onBlur={() => {
+            // Автосохранение при потере фокуса
+            if (value !== schedule.construction_stage) {
+              saveCell(schedule.id, field, value);
+            }
           }}
         />
       );
     }
 
+    if (field === 'sections') {
+      return (
+        <textarea
+          value={value || ''}
+          placeholder="Наименование работ"
+          onChange={(e) => {
+            const el = e.target;
+            el.style.height = 'auto';
+            el.style.height = `${el.scrollHeight}px`;
+            const newValue = e.target.value;
+            setSchedules(prev => prev.map(s => 
+              s.id === schedule.id ? { ...s, [field]: newValue } : s
+            ));
+          }}
+          onBlur={() => saveCell(schedule.id, field, value)}
+          style={{
+            width: '100%',
+            resize: 'none',
+            overflow: 'hidden',
+            lineHeight: '1.4',
+            minHeight: '30px'
+          }}
+          rows={1}
+          disabled={!canEdit}
+          data-auto-resize="true"
+        />
+      );
+    }
+
+    if (isNumberField) {
+      return (
+        <input
+          type="number"
+          value={value || ''}
+          onChange={(e) => {
+            const newValue = e.target.value;
+            setSchedules(prev => prev.map(s => 
+              s.id === schedule.id ? { ...s, [field]: newValue } : s
+            ));
+          }}
+          onBlur={() => saveCell(schedule.id, field, value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              saveCell(schedule.id, field, value);
+            }
+          }}
+          style={{
+            width: '100%',
+            textAlign: 'right'
+          }}
+          disabled={!canEdit}
+          placeholder="0"
+        />
+      );
+    }
+
     return (
-      <div
-        onClick={() => handleCellClick(schedule.id, field, isDateField ? formatDateForInput(value) : value)}
-        style={{
-          padding: '8px',
-          cursor: canEdit ? 'pointer' : 'default',
-          minHeight: '30px',
-          backgroundColor: canEdit ? '#fff' : '#f8f9fa',
-          whiteSpace: field === 'sections' ? 'pre-wrap' : 'nowrap'
+      <input
+        type={isDateField ? 'date' : 'text'}
+        value={isDateField ? formatDateForInput(value) : (value || '')}
+        onChange={(e) => {
+          const newValue = e.target.value;
+          setSchedules(prev => prev.map(s => 
+            s.id === schedule.id ? { ...s, [field]: newValue } : s
+          ));
         }}
-      >
-        {isDateField ? formatDate(value) : value || ''}
-      </div>
+        onBlur={() => saveCell(schedule.id, field, value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            saveCell(schedule.id, field, value);
+          }
+        }}
+        style={{
+          width: '100%'
+        }}
+        disabled={!canEdit}
+      />
     );
   };
 
@@ -480,18 +486,24 @@ const DocumentSchedule = () => {
         <>
           <div className="card-full-width" style={{ padding: 0, position: 'relative' }}>
             <div style={{ overflowX: 'auto' }}>
-              <table className="table" style={{ marginBottom: 0 }}>
+              <table className="table po-table" style={{ 
+                marginBottom: 0, 
+                borderCollapse: 'collapse',
+                border: '1px solid #dee2e6'
+              }}>
                 <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8f9fa', zIndex: 10 }}>
                   <tr>
-                    <th style={{ width: '50px' }}>№</th>
-                    {canEdit && <th style={{ width: '70px' }}>Порядок</th>}
-                    <th style={{ minWidth: '200px' }}>Этап строительства</th>
-                    <th style={{ minWidth: '300px' }}>Наименование работ</th>
-                    <th style={{ minWidth: '140px' }}>План начало</th>
-                    <th style={{ minWidth: '140px' }}>План конец</th>
-                    <th style={{ minWidth: '140px' }}>Факт начало</th>
-                    <th style={{ minWidth: '140px' }}>Факт конец</th>
-                    {canEdit && <th style={{ width: '80px' }}>Действия</th>}
+                    <th style={{ width: '50px', border: '1px solid #dee2e6', padding: '8px' }}>№</th>
+                    {canEdit && <th style={{ width: '70px', border: '1px solid #dee2e6', padding: '8px' }}>Порядок</th>}
+                    <th style={{ minWidth: '200px', border: '1px solid #dee2e6', padding: '8px' }}>Этап строительства</th>
+                    <th style={{ minWidth: '300px', border: '1px solid #dee2e6', padding: '8px' }}>Наименование работ</th>
+                    <th style={{ minWidth: '140px', border: '1px solid #dee2e6', padding: '8px' }}>План начало</th>
+                    <th style={{ minWidth: '140px', border: '1px solid #dee2e6', padding: '8px' }}>План конец</th>
+                    <th style={{ minWidth: '140px', border: '1px solid #dee2e6', padding: '8px' }}>Факт начало</th>
+                    <th style={{ minWidth: '140px', border: '1px solid #dee2e6', padding: '8px' }}>Факт конец</th>
+                    <th style={{ minWidth: '140px', border: '1px solid #dee2e6', padding: '8px' }}>Стоимость план</th>
+                    <th style={{ minWidth: '140px', border: '1px solid #dee2e6', padding: '8px' }}>Стоимость факт</th>
+                    {canEdit && <th style={{ width: '80px', border: '1px solid #dee2e6', padding: '8px' }}>Действия</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -500,11 +512,11 @@ const DocumentSchedule = () => {
                       backgroundColor: schedule.isNew ? '#e8f5e9' : 'transparent',
                       transition: 'background-color 0.3s'
                     }}>
-                      <td style={{ textAlign: 'center' }}>
+                      <td style={{ textAlign: 'center', border: '1px solid #dee2e6', padding: '8px' }}>
                         {schedule.isNew ? '★' : index + 1}
                       </td>
                       {canEdit && (
-                        <td style={{ textAlign: 'center' }}>
+                        <td style={{ textAlign: 'center', border: '1px solid #dee2e6', padding: '8px' }}>
                           <button
                             onClick={() => moveRowUp(index)}
                             disabled={index === 0}
@@ -534,14 +546,16 @@ const DocumentSchedule = () => {
                           </button>
                         </td>
                       )}
-                      <td>{renderCell(schedule, 'construction_stage', schedule.construction_stage)}</td>
-                      <td>{renderCell(schedule, 'sections', schedule.sections)}</td>
-                      <td>{renderCell(schedule, 'planned_start_date', schedule.planned_start_date)}</td>
-                      <td>{renderCell(schedule, 'planned_end_date', schedule.planned_end_date)}</td>
-                      <td>{renderCell(schedule, 'actual_start_date', schedule.actual_start_date)}</td>
-                      <td>{renderCell(schedule, 'actual_end_date', schedule.actual_end_date)}</td>
+                      <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>{renderCell(schedule, 'construction_stage', schedule.construction_stage)}</td>
+                      <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>{renderCell(schedule, 'sections', schedule.sections)}</td>
+                      <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>{renderCell(schedule, 'planned_start_date', schedule.planned_start_date)}</td>
+                      <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>{renderCell(schedule, 'planned_end_date', schedule.planned_end_date)}</td>
+                      <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>{renderCell(schedule, 'actual_start_date', schedule.actual_start_date)}</td>
+                      <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>{renderCell(schedule, 'actual_end_date', schedule.actual_end_date)}</td>
+                      <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>{renderCell(schedule, 'cost_plan', schedule.cost_plan)}</td>
+                      <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>{renderCell(schedule, 'cost_fact', schedule.cost_fact)}</td>
                       {canEdit && (
-                        <td style={{ textAlign: 'center' }}>
+                        <td style={{ textAlign: 'center', border: '1px solid #dee2e6', padding: '8px' }}>
                           <button
                             onClick={() => deleteRow(schedule.id)}
                             className="btn btn-danger btn-sm"

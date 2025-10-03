@@ -17,7 +17,25 @@ def read_tasks(
     current_user: models.User = Depends(auth.get_current_user)
 ):
     query = db.query(models.ProjectOfficeTask).filter(models.ProjectOfficeTask.city_id == city_id)
-    return query.order_by(models.ProjectOfficeTask.id.asc()).offset(skip).limit(limit).all()
+    tasks = query.order_by(models.ProjectOfficeTask.id.asc()).offset(skip).limit(limit).all()
+    
+    # Подтянуть этап строительства по наименованию работ на основе графиков
+    # Линкуем по первому найденному совпадению в schedules (work_name/sections)
+    if tasks:
+        # Получаем все релевантные графики по городу
+        schedules = db.query(models.Schedule).filter(models.Schedule.city_id == city_id).all()
+        for t in tasks:
+            stage_name = None
+            work = (t.work_name or '').strip()
+            if work:
+                for s in schedules:
+                    # Совпадение либо по work_name, либо по sections
+                    if (s.work_name and s.work_name == work) or (s.sections and s.sections == work):
+                        stage_name = s.construction_stage
+                        break
+            # Добавляем атрибут динамически для сериализации через from_attributes
+            setattr(t, 'construction_stage', stage_name)
+    return tasks
 
 @router.post("/", response_model=schemas.ProjectOfficeTask)
 def create_task(
