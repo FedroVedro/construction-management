@@ -78,6 +78,10 @@ class Schedule(Base):
     # Construction schedule specific
     workers_count = Column(Integer, nullable=True)
     
+    # Marketing schedule specific
+    days_before_rns = Column(Integer, nullable=True)  # За сколько дней до РНС
+    duration = Column(Integer, nullable=True)  # Длительность (в днях)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

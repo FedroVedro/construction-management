@@ -98,6 +98,10 @@ class ScheduleBase(BaseModel):
     # Construction schedule
     workers_count: Optional[int] = None
     
+    # Marketing schedule
+    days_before_rns: Optional[int] = None  # За сколько дней до РНС
+    duration: Optional[int] = None  # Длительность (в днях)
+    
     @validator('planned_start_date', 'planned_end_date', 'actual_start_date', 'actual_end_date', pre=True)
     def parse_date(cls, v):
         if v is None:
@@ -116,7 +120,7 @@ class ScheduleBase(BaseModel):
     
     @validator('schedule_type')
     def validate_schedule_type(cls, v):
-        allowed_types = ['document', 'hr', 'procurement', 'construction']
+        allowed_types = ['document', 'hr', 'procurement', 'construction', 'marketing']
         if v not in allowed_types:
             raise ValueError(f'Недопустимый тип графика: {v}. Разрешены: {allowed_types}')
         return v
@@ -141,6 +145,8 @@ class ScheduleUpdate(BaseModel):
     planned_end_date: Optional[Union[datetime, str]] = None
     cost_plan: Optional[float] = None
     cost_fact: Optional[float] = None
+    days_before_rns: Optional[int] = None
+    duration: Optional[int] = None
     
     @validator('planned_start_date', 'planned_end_date', 'actual_start_date', 'actual_end_date', pre=True)
     def parse_date(cls, v):

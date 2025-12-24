@@ -40,7 +40,8 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     document: 'Выдача документации',
     hr: 'HR',
     procurement: 'Закупки',
-    construction: 'Строительство'
+    construction: 'Строительство',
+    marketing: 'Маркетинг и продажи'
   };
 
   // Цвета для разных типов отделов
@@ -48,7 +49,8 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     document: '#6B9BD1',
     hr: '#6BC788', 
     procurement: '#D4A76A',
-    construction: '#D97B7B'
+    construction: '#D97B7B',
+    marketing: '#9B6BD1'
   };
 
   // Функции-хелперы
@@ -350,6 +352,8 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
           workName = schedule.work_name || '';
         } else if (schedule.schedule_type === 'construction') {
           workName = schedule.work_name || '';
+        } else if (schedule.schedule_type === 'marketing') {
+          workName = schedule.work_name || '';
         }
         
         return {
@@ -438,6 +442,7 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
                 <option value="hr">HR</option>
                 <option value="procurement">Закупки</option>
                 <option value="construction">Строительство</option>
+                <option value="marketing">Маркетинг и продажи</option>
               </select>
             </div>
           )}
