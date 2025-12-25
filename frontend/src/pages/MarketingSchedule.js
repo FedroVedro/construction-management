@@ -1,22 +1,45 @@
 import React, { useState, useEffect } from 'react';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import CalendarGanttChart from '../components/Dashboard/CalendarGanttChart';
 import StageAutocomplete from '../components/StageAutocomplete';
 import ScheduleFilters from '../components/ScheduleFilters';
+import ScheduleToolbar from '../components/ScheduleToolbar';
+import QuickDatePicker from '../components/QuickDatePicker';
+import RowActions from '../components/RowActions';
+import StatusIndicator, { getRowStatusStyle, ProgressBar } from '../components/StatusIndicator';
 import { saveScheduleOrder, applyScheduleOrder } from '../utils/scheduleOrderStorage';
+import { saveSelectedCity, getSelectedCity, saveViewMode, getViewMode } from '../utils/userPreferences';
+import { validateDates, prepareRowForCopy } from '../utils/scheduleHelpers';
+
+// Колонки для экспорта
+const EXPORT_COLUMNS = [
+  { field: 'construction_stage', label: 'Этап строительства', type: 'text' },
+  { field: 'work_name', label: 'Наименование работ', type: 'text' },
+  { field: 'days_before_rns', label: 'Дней до РНС', type: 'number' },
+  { field: 'duration', label: 'Длительность', type: 'number' },
+  { field: 'planned_start_date', label: 'План начало', type: 'date' },
+  { field: 'planned_end_date', label: 'План конец', type: 'date' },
+  { field: 'actual_start_date', label: 'Факт начало', type: 'date' },
+  { field: 'actual_end_date', label: 'Факт конец', type: 'date' },
+  { field: 'cost_plan', label: 'Стоимость план', type: 'number' },
+  { field: 'cost_fact', label: 'Стоимость факт', type: 'number' }
+];
 
 const MarketingSchedule = () => {
   const [schedules, setSchedules] = useState([]);
   const [cities, setCities] = useState([]);
   const [selectedCity, setSelectedCity] = useState(null);
-  const [showCalendar, setShowCalendar] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(() => getViewMode('marketing') === 'calendar');
   const [unsavedRows, setUnsavedRows] = useState({});
   const [filterStage, setFilterStage] = useState('');
   const [searchText, setSearchText] = useState('');
   const [showOnlyDelayed, setShowOnlyDelayed] = useState(false);
   const [stages, setStages] = useState([]);
+  const [dateErrors, setDateErrors] = useState({});
   const { user } = useAuth();
+  const { showSuccess, showError, showInfo, showWarning } = useToast();
 
   const canEdit = user?.role !== 'director' && 
     (user?.role === 'admin' || user?.department === 'Отдел маркетинга');
@@ -32,7 +55,6 @@ const MarketingSchedule = () => {
     }
   }, [selectedCity]);
 
-  // Автоматическая настройка высоты textarea после загрузки данных
   useEffect(() => {
     const adjustTextareaHeights = () => {
       const textareas = document.querySelectorAll('textarea[data-auto-resize="true"]');
@@ -46,15 +68,30 @@ const MarketingSchedule = () => {
     return () => clearTimeout(timeoutId);
   }, [schedules]);
 
+  useEffect(() => {
+    const errors = {};
+    schedules.forEach(s => {
+      const planValidation = validateDates(s.planned_start_date, s.planned_end_date);
+      const factValidation = validateDates(s.actual_start_date, s.actual_end_date);
+      
+      if (!planValidation.valid) errors[`${s.id}_plan`] = planValidation.error;
+      if (!factValidation.valid) errors[`${s.id}_fact`] = factValidation.error;
+    });
+    setDateErrors(errors);
+  }, [schedules]);
+
   const fetchCities = async () => {
     try {
       const response = await client.get('/cities');
       setCities(response.data);
       if (response.data.length > 0) {
-        setSelectedCity(response.data[0].id);
+        const savedCity = getSelectedCity();
+        const cityExists = response.data.some(c => c.id === savedCity);
+        setSelectedCity(cityExists ? savedCity : response.data[0].id);
       }
     } catch (error) {
       console.error('Error fetching cities:', error);
+      showError('Ошибка при загрузке списка объектов');
     }
   };
 
@@ -84,7 +121,19 @@ const MarketingSchedule = () => {
       setSchedules(allSchedules);
     } catch (error) {
       console.error('Error fetching schedules:', error);
+      showError('Ошибка при загрузке графика');
     }
+  };
+
+  const handleCityChange = (cityId) => {
+    setSelectedCity(cityId);
+    saveSelectedCity(cityId);
+  };
+
+  const handleViewModeChange = () => {
+    const newMode = !showCalendar;
+    setShowCalendar(newMode);
+    saveViewMode('marketing', newMode ? 'calendar' : 'table');
   };
 
   const getFilteredSchedules = () => {
@@ -122,6 +171,8 @@ const MarketingSchedule = () => {
             const updated = { ...s };
             if (field === 'days_before_rns' || field === 'duration') {
               updated[field] = value ? parseInt(value) : '';
+            } else if (field === 'cost_plan' || field === 'cost_fact') {
+              updated[field] = value === '' ? '' : (isNaN(parseFloat(value)) ? '' : parseFloat(value));
             } else {
               updated[field] = value;
             }
@@ -147,8 +198,12 @@ const MarketingSchedule = () => {
                         schedule.planned_end_date;
         
         if (canSave) {
-          console.log('Creating new schedule with data:', schedule);
-          
+          const dateValidation = validateDates(schedule.planned_start_date, schedule.planned_end_date);
+          if (!dateValidation.valid) {
+            showWarning(dateValidation.error);
+            return;
+          }
+
           const requestData = {
             schedule_type: schedule.schedule_type,
             city_id: parseInt(selectedCity),
@@ -173,12 +228,16 @@ const MarketingSchedule = () => {
             updated[selectedCity] = updated[selectedCity]?.filter(row => row.id !== scheduleId) || [];
             return updated;
           });
+          
+          showSuccess('Запись успешно создана');
         }
       } else {
         let processedValue = value;
         
         if (field === 'days_before_rns' || field === 'duration') {
           processedValue = value ? parseInt(value) : null;
+        } else if (field === 'cost_plan' || field === 'cost_fact') {
+          processedValue = (value === '' || value == null) ? null : (isNaN(parseFloat(value)) ? null : parseFloat(value));
         } else if (typeof value === 'string') {
           processedValue = value.trim() || null;
         }
@@ -194,16 +253,15 @@ const MarketingSchedule = () => {
       }
     } catch (error) {
       console.error('Error saving cell:', error);
-      console.error('Response data:', error.response?.data);
       if (error.response?.data?.detail) {
         if (typeof error.response.data.detail === 'string') {
-          alert(`Ошибка: ${error.response.data.detail}`);
+          showError(`Ошибка: ${error.response.data.detail}`);
         } else if (Array.isArray(error.response.data.detail)) {
-          const messages = error.response.data.detail.map(e => `${e.loc.join('.')}: ${e.msg}`).join('\n');
-          alert(`Ошибки валидации:\n${messages}`);
+          const messages = error.response.data.detail.map(e => `${e.loc.join('.')}: ${e.msg}`).join(', ');
+          showError(`Ошибки валидации: ${messages}`);
         }
       } else {
-        alert('Ошибка при сохранении данных');
+        showError('Ошибка при сохранении данных');
       }
       fetchSchedules();
     }
@@ -211,7 +269,7 @@ const MarketingSchedule = () => {
 
   const addNewRow = () => {
     if (!selectedCity) {
-      alert('Пожалуйста, выберите город');
+      showInfo('Пожалуйста, выберите город');
       return;
     }
     
@@ -227,9 +285,19 @@ const MarketingSchedule = () => {
       planned_end_date: '',
       actual_start_date: null,
       actual_end_date: null,
+      cost_plan: '',
+      cost_fact: '',
       isNew: true
     };
     setSchedules([...schedules, newRow]);
+    showInfo('Добавлена новая строка');
+  };
+
+  const copyRow = (schedule) => {
+    const copy = prepareRowForCopy(schedule, 'marketing');
+    copy.city_id = selectedCity;
+    setSchedules([...schedules, copy]);
+    showSuccess('Строка скопирована');
   };
 
   const deleteRow = async (id) => {
@@ -242,14 +310,18 @@ const MarketingSchedule = () => {
             updated[selectedCity] = updated[selectedCity]?.filter(row => row.id !== id) || [];
             return updated;
           });
+          showSuccess('Строка удалена');
         } else {
           await client.delete(`/schedules/${id}`);
+          showSuccess('Запись удалена');
           fetchSchedules();
         }
       } catch (error) {
         console.error('Error deleting schedule:', error);
         if (error.response?.data?.detail) {
-          alert(`Ошибка: ${error.response.data.detail}`);
+          showError(`Ошибка: ${error.response.data.detail}`);
+        } else {
+          showError('Ошибка при удалении');
         }
       }
     }
@@ -282,23 +354,11 @@ const MarketingSchedule = () => {
     }));
   };
 
-  const moveRowUp = (index) => {
-    moveRow(index, index - 1);
-  };
-
-  const moveRowDown = (index) => {
-    moveRow(index, index + 1);
-  };
-
-  const formatDateForInput = (date) => {
-    if (!date) return '';
-    const d = new Date(date);
-    return d.toISOString().split('T')[0];
-  };
-
   const renderCell = (schedule, field, value) => {
-    const isDateField = field.includes('date');
     const isNumberField = field === 'days_before_rns' || field === 'duration';
+    const isCostField = field.includes('cost');
+    const isDateField = field.includes('date');
+    const hasDateError = dateErrors[`${schedule.id}_${field.includes('actual') ? 'fact' : 'plan'}`];
 
     if (field === 'construction_stage') {
       return (
@@ -347,10 +407,73 @@ const MarketingSchedule = () => {
       );
     }
 
+    if (isCostField) {
+      return (
+        <input
+          type="number"
+          value={value || ''}
+          onChange={(e) => {
+            const newValue = e.target.value;
+            setSchedules(prev => prev.map(s => 
+              s.id === schedule.id ? { ...s, [field]: newValue } : s
+            ));
+          }}
+          onBlur={() => saveCell(schedule.id, field, value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              saveCell(schedule.id, field, value);
+            }
+          }}
+          style={{
+            width: '100%',
+            textAlign: 'right'
+          }}
+          disabled={!canEdit}
+          placeholder="0"
+        />
+      );
+    }
+
+    // Даты с быстрым выбором
+    if (isDateField) {
+      const isEndDate = field.includes('end');
+      const relatedDateField = isEndDate ? field.replace('end', 'start') : null;
+      const relatedDate = relatedDateField ? schedule[relatedDateField] : null;
+      
+      return (
+        <div style={{ position: 'relative' }}>
+          <QuickDatePicker
+            value={value}
+            onChange={(newValue) => {
+              setSchedules(prev => prev.map(s => 
+                s.id === schedule.id ? { ...s, [field]: newValue } : s
+              ));
+            }}
+            onSave={(newValue) => saveCell(schedule.id, field, newValue)}
+            disabled={!canEdit}
+            isEndDate={isEndDate}
+            relatedDate={relatedDate}
+          />
+          {hasDateError && isEndDate && (
+            <div style={{
+              position: 'absolute',
+              bottom: '-18px',
+              left: 0,
+              fontSize: '11px',
+              color: '#dc3545',
+              whiteSpace: 'nowrap'
+            }}>
+              ⚠️ {hasDateError}
+            </div>
+          )}
+        </div>
+      );
+    }
+
     return (
       <input
-        type={isDateField ? 'date' : isNumberField ? 'number' : 'text'}
-        value={isDateField ? formatDateForInput(value) : (value || '')}
+        type={isNumberField ? 'number' : 'text'}
+        value={value || ''}
         onChange={(e) => {
           const newValue = e.target.value;
           setSchedules(prev => prev.map(s => 
@@ -371,14 +494,17 @@ const MarketingSchedule = () => {
     );
   };
 
+  const filteredSchedules = getFilteredSchedules();
+
   return (
     <div className="container-fluid">
-      <h1>Маркетинг и продажи</h1>
+      <h1>График маркетинга и продаж</h1>
       
+      {/* Табы городов */}
       <div style={{ 
         display: 'flex', 
-        borderBottom: '2px solid #dee2e6',
-        marginBottom: '20px',
+        borderBottom: '2px solid var(--border-color)',
+        marginBottom: '16px',
         alignItems: 'center',
         justifyContent: 'space-between'
       }}>
@@ -386,13 +512,13 @@ const MarketingSchedule = () => {
           {cities.map(city => (
             <button
               key={city.id}
-              onClick={() => setSelectedCity(city.id)}
+              onClick={() => handleCityChange(city.id)}
               style={{
                 padding: '10px 20px',
                 border: 'none',
                 borderBottom: selectedCity === city.id ? '2px solid #007bff' : 'none',
-                backgroundColor: selectedCity === city.id ? '#f8f9fa' : 'transparent',
-                color: selectedCity === city.id ? '#007bff' : '#6c757d',
+                backgroundColor: selectedCity === city.id ? 'var(--table-stripe)' : 'transparent',
+                color: selectedCity === city.id ? '#007bff' : 'var(--text-muted)',
                 fontWeight: selectedCity === city.id ? 'bold' : 'normal',
                 cursor: 'pointer',
                 transition: 'all 0.3s'
@@ -402,15 +528,22 @@ const MarketingSchedule = () => {
             </button>
           ))}
         </div>
-        
-        <button
-          onClick={() => setShowCalendar(!showCalendar)}
-          className="btn btn-secondary"
-          style={{ marginRight: '20px' }}
-        >
-          {showCalendar ? '📊 Табличный вид' : '📅 Календарный вид'}
-        </button>
       </div>
+
+      {/* Панель инструментов */}
+      <ScheduleToolbar
+        schedules={filteredSchedules}
+        columns={EXPORT_COLUMNS}
+        filename="marketing_schedule"
+        onAddRow={canEdit ? addNewRow : null}
+        onRefresh={fetchSchedules}
+        canEdit={canEdit}
+        scheduleType="marketing"
+        cities={cities}
+        selectedCity={selectedCity}
+        showCalendar={showCalendar}
+        onToggleCalendar={handleViewModeChange}
+      />
 
       {!showCalendar && (
         <ScheduleFilters
@@ -437,121 +570,99 @@ const MarketingSchedule = () => {
           <div className="card-full-width" style={{ padding: 0, overflow: 'visible' }}>
             <div style={{ overflowX: 'auto', overflowY: 'visible' }}>
               <table className="table po-table" style={{ 
+                padding: 40, 
                 marginBottom: 0, 
                 borderCollapse: 'collapse',
-                border: '1px solid #dee2e6'
+                border: '1px solid var(--border-color)'
               }}>
-                <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8f9fa', zIndex: 10 }}>
+                <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--table-stripe)', zIndex: 10 }}>
                   <tr>
-                    <th style={{ width: '50px', border: '1px solid #dee2e6', padding: '8px' }}>№</th>
-                    {canEdit && <th style={{ width: '70px', border: '1px solid #dee2e6', padding: '8px' }}>Порядок</th>}
-                    <th style={{ minWidth: '180px', position: 'relative', border: '1px solid #dee2e6', padding: '8px' }}>Этап строительства</th>
-                    <th style={{ minWidth: '250px', border: '1px solid #dee2e6', padding: '8px' }}>Наименование работ</th>
-                    <th style={{ minWidth: '120px', border: '1px solid #dee2e6', padding: '8px' }}>Дней до РНС</th>
-                    <th style={{ minWidth: '100px', border: '1px solid #dee2e6', padding: '8px' }}>Длительность</th>
-                    <th style={{ minWidth: '130px', border: '1px solid #dee2e6', padding: '8px' }}>План начало</th>
-                    <th style={{ minWidth: '130px', border: '1px solid #dee2e6', padding: '8px' }}>План конец</th>
-                    <th style={{ minWidth: '130px', border: '1px solid #dee2e6', padding: '8px' }}>Факт начало</th>
-                    <th style={{ minWidth: '130px', border: '1px solid #dee2e6', padding: '8px' }}>Факт конец</th>
-                    {canEdit && <th style={{ width: '80px', border: '1px solid #dee2e6', padding: '8px' }}>Действия</th>}
+                    <th style={{ width: '50px', border: '1px solid var(--border-color)', padding: '8px' }}>№</th>
+                    <th style={{ width: '60px', border: '1px solid var(--border-color)', padding: '8px' }}>Статус</th>
+                    {canEdit && <th style={{ width: '90px', border: '1px solid var(--border-color)', padding: '8px' }}>Действия</th>}
+                    <th style={{ minWidth: '200px', border: '1px solid var(--border-color)', padding: '8px' }}>Этап строительства</th>
+                    <th style={{ minWidth: '250px', border: '1px solid var(--border-color)', padding: '8px' }}>Наименование работ</th>
+                    <th style={{ minWidth: '100px', border: '1px solid var(--border-color)', padding: '8px' }}>Дней до РНС</th>
+                    <th style={{ minWidth: '100px', border: '1px solid var(--border-color)', padding: '8px' }}>Длительность</th>
+                    <th style={{ minWidth: '160px', border: '1px solid var(--border-color)', padding: '8px' }}>План начало</th>
+                    <th style={{ minWidth: '160px', border: '1px solid var(--border-color)', padding: '8px' }}>План конец</th>
+                    <th style={{ minWidth: '160px', border: '1px solid var(--border-color)', padding: '8px' }}>Факт начало</th>
+                    <th style={{ minWidth: '160px', border: '1px solid var(--border-color)', padding: '8px' }}>Факт конец</th>
+                    <th style={{ minWidth: '130px', border: '1px solid var(--border-color)', padding: '8px' }}>Стоимость план</th>
+                    <th style={{ minWidth: '130px', border: '1px solid var(--border-color)', padding: '8px' }}>Стоимость факт</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {getFilteredSchedules().map((schedule, index) => (
-                    <tr key={schedule.id} style={{ 
-                      backgroundColor: schedule.isNew ? '#e8f5e9' : 'transparent',
-                      transition: 'background-color 0.3s'
-                    }}>
-                      <td style={{ textAlign: 'center', border: '1px solid #dee2e6', padding: '8px' }}>
-                        {schedule.isNew ? '★' : index + 1}
-                      </td>
-                      {canEdit && (
-                        <td style={{ textAlign: 'center', border: '1px solid #dee2e6', padding: '8px' }}>
-                          <button
-                            onClick={() => moveRowUp(index)}
-                            disabled={index === 0}
-                            className="btn btn-sm"
-                            style={{ 
-                              padding: '2px 6px', 
-                              fontSize: '12px',
-                              marginRight: '2px',
-                              opacity: index === 0 ? 0.5 : 1
-                            }}
-                            title="Переместить вверх"
-                          >
-                            ↑
-                          </button>
-                          <button
-                            onClick={() => moveRowDown(index)}
-                            disabled={index === getFilteredSchedules().length - 1}
-                            className="btn btn-sm"
-                            style={{ 
-                              padding: '2px 6px', 
-                              fontSize: '12px',
-                              opacity: index === getFilteredSchedules().length - 1 ? 0.5 : 1
-                            }}
-                            title="Переместить вниз"
-                          >
-                            ↓
-                          </button>
+                  {filteredSchedules.map((schedule, index) => {
+                    const rowStyle = schedule.isNew 
+                      ? { backgroundColor: '#e8f5e9' }
+                      : getRowStatusStyle(schedule);
+                    
+                    return (
+                      <tr key={schedule.id} style={{ 
+                        ...rowStyle,
+                        transition: 'background-color 0.3s'
+                      }}>
+                        <td style={{ textAlign: 'center', border: '1px solid var(--border-color)', padding: '8px' }}>
+                          {schedule.isNew ? '★' : index + 1}
                         </td>
-                      )}
-                      <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>{renderCell(schedule, 'construction_stage', schedule.construction_stage)}</td>
-                      <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>{renderCell(schedule, 'work_name', schedule.work_name)}</td>
-                      <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>{renderCell(schedule, 'days_before_rns', schedule.days_before_rns)}</td>
-                      <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>{renderCell(schedule, 'duration', schedule.duration)}</td>
-                      <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>{renderCell(schedule, 'planned_start_date', schedule.planned_start_date)}</td>
-                      <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>{renderCell(schedule, 'planned_end_date', schedule.planned_end_date)}</td>
-                      <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>{renderCell(schedule, 'actual_start_date', schedule.actual_start_date)}</td>
-                      <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>{renderCell(schedule, 'actual_end_date', schedule.actual_end_date)}</td>
-                      {canEdit && (
-                        <td style={{ textAlign: 'center', border: '1px solid #dee2e6', padding: '8px' }}>
-                          <button
-                            onClick={() => deleteRow(schedule.id)}
-                            className="btn btn-danger btn-sm"
-                            style={{ padding: '2px 8px' }}
-                          >
-                            ✕
-                          </button>
+                        <td style={{ textAlign: 'center', border: '1px solid var(--border-color)', padding: '8px' }}>
+                          <StatusIndicator schedule={schedule} />
+                          <div style={{ marginTop: '4px' }}>
+                            <ProgressBar schedule={schedule} />
+                          </div>
                         </td>
-                      )}
-                    </tr>
-                  ))}
-                  {canEdit && getFilteredSchedules().length === 0 && (
+                        {canEdit && (
+                          <td style={{ textAlign: 'center', border: '1px solid var(--border-color)', padding: '8px' }}>
+                            <RowActions
+                              onCopy={() => copyRow(schedule)}
+                              onDelete={() => deleteRow(schedule.id)}
+                              onMoveUp={() => moveRow(index, index - 1)}
+                              onMoveDown={() => moveRow(index, index + 1)}
+                              canMoveUp={index > 0}
+                              canMoveDown={index < filteredSchedules.length - 1}
+                              isNew={schedule.isNew}
+                            />
+                          </td>
+                        )}
+                        <td style={{ border: '1px solid var(--border-color)', padding: '8px' }}>{renderCell(schedule, 'construction_stage', schedule.construction_stage)}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '8px' }}>{renderCell(schedule, 'work_name', schedule.work_name)}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '8px' }}>{renderCell(schedule, 'days_before_rns', schedule.days_before_rns)}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '8px' }}>{renderCell(schedule, 'duration', schedule.duration)}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '8px' }}>{renderCell(schedule, 'planned_start_date', schedule.planned_start_date)}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '8px' }}>{renderCell(schedule, 'planned_end_date', schedule.planned_end_date)}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '8px' }}>{renderCell(schedule, 'actual_start_date', schedule.actual_start_date)}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '8px' }}>{renderCell(schedule, 'actual_end_date', schedule.actual_end_date)}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '8px' }}>{renderCell(schedule, 'cost_plan', schedule.cost_plan)}</td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '8px' }}>{renderCell(schedule, 'cost_fact', schedule.cost_fact)}</td>
+                      </tr>
+                    );
+                  })}
+                  {filteredSchedules.length === 0 && (
                     <tr>
-                      <td colSpan={canEdit ? 11 : 9} style={{ textAlign: 'center', padding: '20px', color: '#6c757d' }}>
-                        Нет данных. Нажмите "Добавить строку" для начала работы.
+                      <td colSpan={canEdit ? 13 : 12} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                        <div style={{ fontSize: '48px', marginBottom: '16px' }}>📈</div>
+                        <div>Нет данных для отображения</div>
+                        {canEdit && (
+                          <button onClick={addNewRow} className="btn btn-primary" style={{ marginTop: '16px' }}>
+                            + Добавить первую строку
+                          </button>
+                        )}
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
-            
-            {canEdit && (
-              <div style={{ 
-                padding: '10px', 
-                backgroundColor: '#f8f9fa',
-                borderTop: '1px solid #dee2e6',
-                textAlign: 'center'
-              }}>
-                <button 
-                  onClick={addNewRow}
-                  className="btn btn-primary"
-                >
-                  + Добавить строку
-                </button>
-              </div>
-            )}
           </div>
 
           {!canEdit && (
             <div style={{ 
               marginTop: '10px', 
               padding: '10px', 
-              backgroundColor: '#f8f9fa',
+              backgroundColor: 'var(--table-stripe)',
               borderRadius: '4px',
-              color: '#6c757d',
+              color: 'var(--text-muted)',
               fontSize: '14px'
             }}>
               <i>Режим просмотра. У вас нет прав для редактирования этого графика.</i>
@@ -564,4 +675,3 @@ const MarketingSchedule = () => {
 };
 
 export default MarketingSchedule;
-

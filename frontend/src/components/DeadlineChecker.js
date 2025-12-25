@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import client from '../api/client';
 import { sendDeadlineNotifications } from '../utils/telegramApi';
 import { parseLastDate, shouldSendNotification } from '../utils/dateParser';
@@ -11,91 +11,9 @@ const DeadlineChecker = () => {
 
   useEffect(() => {
     fetchSettings();
-    // Проверяем дедлайны каждые 30 минут
-    const interval = setInterval(checkDeadlines, 30 * 60 * 1000);
-    
-    // Первая проверка при загрузке
-    checkDeadlines();
-    
-    return () => clearInterval(interval);
   }, []);
 
-  const fetchSettings = async () => {
-    try {
-      // Сначала пытаемся загрузить локальные настройки
-      const localSettings = JSON.parse(localStorage.getItem('telegramSettings') || '{}');
-      const localEmployees = Object.values(localSettings).map(setting => ({
-        id: setting.responsible,
-        responsible: setting.responsible,
-        chatId: setting.chatId || '',
-        weekBefore: setting.weekBefore !== undefined ? setting.weekBefore : true,
-        dayBefore: setting.dayBefore !== undefined ? setting.dayBefore : true,
-        dayOf: setting.dayOf !== undefined ? setting.dayOf : true
-      }));
-      
-      if (localEmployees.length > 0) {
-        setSettings({ employees: localEmployees });
-        console.log('Loaded local telegram settings:', localEmployees);
-        return;
-      }
-      
-      // Fallback: получаем данные из проектного офиса
-      await loadFallbackSettings();
-    } catch (error) {
-      console.error('Error fetching telegram settings:', error);
-    }
-  };
-
-  const loadFallbackSettings = async () => {
-    try {
-      // Сначала получаем список городов
-      const citiesResponse = await client.get('/cities');
-      const cities = citiesResponse.data || [];
-      
-      if (cities.length === 0) {
-        console.warn('No cities found for fallback');
-        return;
-      }
-      
-      // Получаем данные из всех городов
-      const allTasks = [];
-      for (const city of cities) {
-        try {
-          const response = await client.get(`/project-office?city_id=${city.id}`);
-          if (response.data) {
-            allTasks.push(...response.data);
-          }
-        } catch (cityError) {
-          console.warn(`Error fetching tasks for city ${city.id}:`, cityError);
-        }
-      }
-      
-      // Извлекаем уникальные значения ответственных
-      const responsibleSet = new Set();
-      allTasks.forEach(task => {
-        if (task.responsible && task.responsible.trim()) {
-          responsibleSet.add(task.responsible.trim());
-        }
-      });
-      
-      // Создаем настройки по умолчанию
-      const defaultSettings = Array.from(responsibleSet).map(responsible => ({
-        id: responsible,
-        responsible: responsible,
-        chatId: '',
-        weekBefore: true,
-        dayBefore: true,
-        dayOf: true
-      }));
-      
-      setSettings({ employees: defaultSettings });
-      console.log('Loaded fallback settings:', defaultSettings);
-    } catch (fallbackError) {
-      console.error('Error fetching fallback settings:', fallbackError);
-    }
-  };
-
-  const checkDeadlines = async () => {
+  const checkDeadlines = useCallback(async () => {
     if (!settings || !settings.employees || settings.employees.length === 0) {
       return;
     }
@@ -190,6 +108,95 @@ const DeadlineChecker = () => {
     } finally {
       setIsRunning(false);
       setLastCheck(new Date());
+    }
+  }, [settings]);
+
+  useEffect(() => {
+    if (!settings) return;
+    
+    // Проверяем дедлайны каждые 30 минут
+    const interval = setInterval(() => {
+      checkDeadlines();
+    }, 30 * 60 * 1000);
+    
+    // Первая проверка при загрузке
+    checkDeadlines();
+    
+    return () => clearInterval(interval);
+  }, [settings, checkDeadlines]);
+
+  const fetchSettings = async () => {
+    try {
+      // Сначала пытаемся загрузить локальные настройки
+      const localSettings = JSON.parse(localStorage.getItem('telegramSettings') || '{}');
+      const localEmployees = Object.values(localSettings).map(setting => ({
+        id: setting.responsible,
+        responsible: setting.responsible,
+        chatId: setting.chatId || '',
+        weekBefore: setting.weekBefore !== undefined ? setting.weekBefore : true,
+        dayBefore: setting.dayBefore !== undefined ? setting.dayBefore : true,
+        dayOf: setting.dayOf !== undefined ? setting.dayOf : true
+      }));
+      
+      if (localEmployees.length > 0) {
+        setSettings({ employees: localEmployees });
+        console.log('Loaded local telegram settings:', localEmployees);
+        return;
+      }
+      
+      // Fallback: получаем данные из проектного офиса
+      await loadFallbackSettings();
+    } catch (error) {
+      console.error('Error fetching telegram settings:', error);
+    }
+  };
+
+  const loadFallbackSettings = async () => {
+    try {
+      // Сначала получаем список городов
+      const citiesResponse = await client.get('/cities');
+      const cities = citiesResponse.data || [];
+      
+      if (cities.length === 0) {
+        console.warn('No cities found for fallback');
+        return;
+      }
+      
+      // Получаем данные из всех городов
+      const allTasks = [];
+      for (const city of cities) {
+        try {
+          const response = await client.get(`/project-office?city_id=${city.id}`);
+          if (response.data) {
+            allTasks.push(...response.data);
+          }
+        } catch (cityError) {
+          console.warn(`Error fetching tasks for city ${city.id}:`, cityError);
+        }
+      }
+      
+      // Извлекаем уникальные значения ответственных
+      const responsibleSet = new Set();
+      allTasks.forEach(task => {
+        if (task.responsible && task.responsible.trim()) {
+          responsibleSet.add(task.responsible.trim());
+        }
+      });
+      
+      // Создаем настройки по умолчанию
+      const defaultSettings = Array.from(responsibleSet).map(responsible => ({
+        id: responsible,
+        responsible: responsible,
+        chatId: '',
+        weekBefore: true,
+        dayBefore: true,
+        dayOf: true
+      }));
+      
+      setSettings({ employees: defaultSettings });
+      console.log('Loaded fallback settings:', defaultSettings);
+    } catch (fallbackError) {
+      console.error('Error fetching fallback settings:', fallbackError);
     }
   };
 

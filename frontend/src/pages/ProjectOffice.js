@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import client from '../api/client';
+import { useToast } from '../context/ToastContext';
 import { saveScheduleOrder, applyScheduleOrder } from '../utils/scheduleOrderStorage';
+import { saveSelectedCity, getSelectedCity } from '../utils/userPreferences';
 
 const STATUS_COLORS = {
   'Отложено': '#007bff',
@@ -16,9 +18,10 @@ const ProjectOffice = () => {
   const [searchText, setSearchText] = useState('');
   const [expandedComments, setExpandedComments] = useState({});
   const [workNames, setWorkNames] = useState([]);
-  const [workNamePopup, setWorkNamePopup] = useState(null); // { taskId, suggestions, rect, up }
-  const [schedulesData, setSchedulesData] = useState([]); // Данные графиков для поиска этапов
-  const [stages, setStages] = useState([]); // Этапы строительства
+  const [workNamePopup, setWorkNamePopup] = useState(null);
+  const [schedulesData, setSchedulesData] = useState([]);
+  const [stages, setStages] = useState([]);
+  const { showSuccess, showError, showInfo } = useToast();
 
   useEffect(() => {
     fetchCities();
@@ -38,7 +41,6 @@ const ProjectOffice = () => {
     }
   }, [selectedCity]);
 
-  // Обновить этапы строительства для всех задач при загрузке данных графиков
   useEffect(() => {
     if (schedulesData.length > 0 && tasks.length > 0) {
       setTasks(prev => prev.map(task => {
@@ -55,10 +57,20 @@ const ProjectOffice = () => {
     try {
       const res = await client.get('/cities');
       setCities(res.data);
-      if (res.data.length) setSelectedCity(res.data[0].id);
+      if (res.data.length) {
+        const savedCity = getSelectedCity();
+        const cityExists = res.data.some(c => c.id === savedCity);
+        setSelectedCity(cityExists ? savedCity : res.data[0].id);
+      }
     } catch (e) {
       console.error(e);
+      showError('Ошибка при загрузке объектов');
     }
+  };
+
+  const handleCityChange = (cityId) => {
+    setSelectedCity(cityId);
+    saveSelectedCity(cityId);
   };
 
   const fetchTasks = async () => {
@@ -66,16 +78,14 @@ const ProjectOffice = () => {
       const res = await client.get('/project-office', { params: { city_id: selectedCity } });
       const ordered = applyScheduleOrder(res.data, selectedCity, 'project_office');
       setTasks(ordered);
-      // Обновить список Наименований работ из текущих задач
       mergeWorkNamesFromTasks(ordered);
-      // Загрузить данные графиков для поиска этапов
       await fetchSchedulesData();
     } catch (e) {
       console.error(e);
+      showError('Ошибка при загрузке задач');
     }
   };
 
-  // Автовысота для всех textarea комментариев после загрузки/обновления задач
   useEffect(() => {
     const adjust = () => {
       const areas = document.querySelectorAll('textarea[data-auto-resize="true"]');
@@ -84,7 +94,6 @@ const ProjectOffice = () => {
         el.style.height = `${el.scrollHeight}px`;
       });
     };
-    // Дать DOM обновиться
     const id = setTimeout(adjust, 0);
     return () => clearTimeout(id);
   }, [tasks, expandedComments]);
@@ -146,7 +155,6 @@ const ProjectOffice = () => {
     
     const trimmedWorkName = workName.trim();
     
-    // Ищем точное совпадение по work_name или sections
     for (const schedule of schedulesData) {
       if ((schedule.work_name && schedule.work_name.trim() === trimmedWorkName) ||
           (schedule.sections && schedule.sections.trim() === trimmedWorkName)) {
@@ -205,7 +213,10 @@ const ProjectOffice = () => {
   };
 
   const addRow = () => {
-    if (!selectedCity) return;
+    if (!selectedCity) {
+      showInfo('Пожалуйста, выберите объект');
+      return;
+    }
     setTasks(prev => ([...prev, {
       id: `new-${Date.now()}`,
       city_id: selectedCity,
@@ -223,6 +234,7 @@ const ProjectOffice = () => {
       result: '',
       text_color: ''
     }]));
+    showInfo('Добавлена новая строка');
   };
 
   const saveCell = async (taskId, field, value) => {
@@ -232,15 +244,12 @@ const ProjectOffice = () => {
       setTasks(updated);
 
       const row = updated.find(t => t.id === taskId);
-      // создаем запись, когда заполнена хотя бы "Задача"
       const minimalReady = row.task && String(row.task).trim().length > 0;
       if (minimalReady) {
-        // подготовить полезную нагрузку: пустые строки -> null, удалить id
         const payload = { ...row };
         delete payload.id;
         Object.keys(payload).forEach((k) => {
           if (payload[k] === '') payload[k] = null;
-          // статус пустой строкой недопустим — уберем поле
           if (k === 'status' && (payload[k] === '' || payload[k] == null)) {
             delete payload[k];
           }
@@ -248,42 +257,35 @@ const ProjectOffice = () => {
         try {
           const res = await client.post('/project-office', payload);
           setTasks(prev => prev.map(t => t.id === taskId ? res.data : t));
+          showSuccess('Задача создана');
         } catch (e) {
           console.error(e);
-          alert(e?.response?.data?.detail || 'Ошибка сохранения');
+          showError(e?.response?.data?.detail || 'Ошибка сохранения');
           fetchTasks();
         }
       }
       return;
     }
 
-    // existing row
     const processed = (typeof value === 'string') ? (value.trim() === '' ? null : value.trim()) : value;
     try {
       await client.put(`/project-office/${taskId}`, { [field]: processed });
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, [field]: processed } : t));
     } catch (e) {
       console.error(e);
-      alert(e?.response?.data?.detail || 'Ошибка сохранения');
+      showError(e?.response?.data?.detail || 'Ошибка сохранения');
       fetchTasks();
     }
   };
 
-  // inline inputs – no click-to-edit logic required
-
   const onKeyDown = (e, taskId, field) => {
     if (e.key === 'Enter') {
-      // Для однострочных инпутов сохраним по Enter
-      // Текстовые области обрабатываются отдельным хендлером
       saveCell(taskId, field, tasks.find(t => t.id === taskId)?.[field] ?? '');
     }
-    // Escape не требуется обрабатывать, так как редактирование inline
   };
 
   const onTextareaKeyDown = (e) => {
-    // Не очищать значение и не триггерить сохранение по Enter
     if (e.key === 'Enter') {
-      // Разрешаем перевод строки. Блокируем всплытие на общий onKeyDown
       e.stopPropagation();
     }
   };
@@ -292,18 +294,21 @@ const ProjectOffice = () => {
     if (!window.confirm('Удалить строку?')) return;
     if (id.toString().startsWith('new-')) {
       setTasks(prev => prev.filter(t => t.id !== id));
+      showSuccess('Строка удалена');
       return;
     }
     try {
       await client.delete(`/project-office/${id}`);
+      showSuccess('Задача удалена');
       fetchTasks();
     } catch (e) {
       console.error(e);
+      showError('Ошибка при удалении');
     }
   };
 
   const renderEditable = (task, field, type = 'text') => {
-    const isDate = ['set_date', 'completion_date'].includes(field); // 'due_date' теперь текстовое поле
+    const isDate = ['set_date', 'completion_date'].includes(field);
     const valueForInput = (() => {
       const val = task[field];
       if (isDate && val) return new Date(val).toISOString().split('T')[0];
@@ -358,7 +363,6 @@ const ProjectOffice = () => {
               el.style.height = `${el.scrollHeight}px`;
               const newWorkName = e.target.value;
               
-              // Найти соответствующий этап строительства
               const constructionStage = findConstructionStage(newWorkName);
               
               setTasks(prev => prev.map(t => t.id === task.id ? { 
@@ -367,7 +371,6 @@ const ProjectOffice = () => {
                 construction_stage: constructionStage
               } : t));
               
-              // обновить список и позицию попапа
               const q = (newWorkName || '').toLowerCase();
               const sugg = (q.length >= 2 ? workNames.filter(name => name.toLowerCase().includes(q)) : workNames);
               const rect = el.getBoundingClientRect();
@@ -376,7 +379,6 @@ const ProjectOffice = () => {
               setWorkNamePopup({ taskId: task.id, suggestions: sugg, rect, up });
             }}
             onBlur={() => {
-              // Даем шанс выбрать пункт через onMouseDown
               saveCell(task.id, 'work_name', task.work_name || '');
               setTimeout(() => setWorkNamePopup(prev => (prev && prev.taskId === task.id ? null : prev)), 120);
             }}
@@ -384,7 +386,6 @@ const ProjectOffice = () => {
             style={{ width: '100%', resize: 'none', overflow: 'hidden', lineHeight: '1.4' }}
             rows={6}
           />
-          {/* список выводится глобально фиксированной позицией ниже */}
         </div>
       );
     }
@@ -491,9 +492,11 @@ const ProjectOffice = () => {
       } else {
         await client.put(`/project-office/${task.id}`, { is_done: newVal });
         setTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_done: newVal } : t));
+        showSuccess(newVal ? 'Задача отмечена как выполненная' : 'Отметка снята');
       }
     } catch (e) {
       console.error(e);
+      showError('Ошибка при обновлении');
     }
   };
 
@@ -510,21 +513,21 @@ const ProjectOffice = () => {
     <div className="container-fluid">
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 16 }}>
         <h1 style={{ marginBottom: 0 }}>Проектный офис</h1>
-        <span style={{ color: '#6c757d' }}>управление задачами по объектам</span>
+        <span style={{ color: 'var(--text-muted)' }}>управление задачами по объектам</span>
       </div>
 
-      <div className="po-toolbar" style={{ display: 'flex', borderBottom: '2px solid #dee2e6', marginBottom: '16px', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+      <div className="po-toolbar" style={{ display: 'flex', borderBottom: '2px solid var(--border-color)', marginBottom: '16px', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {cities.map(city => (
             <button
               key={city.id}
-              onClick={() => setSelectedCity(city.id)}
+              onClick={() => handleCityChange(city.id)}
               style={{
                 padding: '10px 20px',
                 border: 'none',
                 borderBottom: selectedCity === city.id ? '2px solid #007bff' : 'none',
-                backgroundColor: selectedCity === city.id ? '#f8f9fa' : 'transparent',
-                color: selectedCity === city.id ? '#007bff' : '#6c757d',
+                backgroundColor: selectedCity === city.id ? 'var(--table-stripe)' : 'transparent',
+                color: selectedCity === city.id ? '#007bff' : 'var(--text-muted)',
                 fontWeight: selectedCity === city.id ? 'bold' : 'normal',
                 cursor: 'pointer',
                 transition: 'all 0.3s'
@@ -537,7 +540,7 @@ const ProjectOffice = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <input
             type="text"
-            placeholder="Поиск: задача, ответственный, участники, комментарии, этап строительства"
+            placeholder="🔍 Поиск: задача, ответственный, участники, комментарии, этап"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             className="form-control"
@@ -549,7 +552,7 @@ const ProjectOffice = () => {
 
       <div className="card-full-width po-card" style={{ padding: 0, overflow: 'auto' }}>
         <table className="table po-table" style={{ marginBottom: 0 }}>
-          <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8f9fa', zIndex: 10, boxShadow: 'inset 0 -1px 0 #e9ecef' }}>
+          <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--table-stripe)', zIndex: 10, boxShadow: 'inset 0 -1px 0 var(--border-color)' }}>
             <tr>
               <th style={{ minWidth: '140px' }}>Дата постановки</th>
               <th style={{ minWidth: '140px' }}>Постановщик</th>
@@ -569,7 +572,7 @@ const ProjectOffice = () => {
           </thead>
           <tbody>
             {filteredTasks.map((t, idx) => (
-              <tr key={t.id} className={t.is_done ? 'po-row-done' : ''} style={{ background: idx % 2 === 0 ? '#ffffff' : '#fbfbfb' }}>
+              <tr key={t.id} className={t.is_done ? 'po-row-done' : ''} style={{ background: idx % 2 === 0 ? 'var(--bg-card)' : 'var(--table-stripe)' }}>
                 <td>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <button className="btn btn-sm" title="Вверх" onClick={() => moveRow(tasks.indexOf(t), tasks.indexOf(t) - 1)} disabled={tasks.indexOf(t) === 0} style={{ padding: '2px 6px' }}>↑</button>
@@ -585,9 +588,9 @@ const ProjectOffice = () => {
                     readOnly 
                     style={{ 
                       width: '100%', 
-                      background: t.construction_stage ? '#e8f5e8' : '#f1f3f5',
-                      border: t.construction_stage ? '1px solid #28a745' : '1px solid #ced4da',
-                      color: t.construction_stage ? '#155724' : '#6c757d'
+                      background: t.construction_stage ? '#e8f5e8' : 'var(--table-stripe)',
+                      border: t.construction_stage ? '1px solid #28a745' : '1px solid var(--border-color)',
+                      color: t.construction_stage ? '#155724' : 'var(--text-muted)'
                     }} 
                     placeholder="Этап строительства"
                   />
@@ -609,7 +612,7 @@ const ProjectOffice = () => {
             ))}
             {filteredTasks.length === 0 && (
               <tr>
-                <td colSpan={14} style={{ textAlign: 'center', padding: '20px', color: '#6c757d' }}>
+                <td colSpan={14} style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>
                   Нет данных. Измените критерии поиска или нажмите «Добавить строку».
                 </td>
               </tr>
@@ -626,8 +629,8 @@ const ProjectOffice = () => {
             top: workNamePopup.up ? undefined : (workNamePopup.rect.bottom + 4),
             bottom: workNamePopup.up ? (window.innerHeight - workNamePopup.rect.top + 4) : undefined,
             zIndex: 9999,
-            background: '#fff',
-            border: '1px solid #e5e7eb',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
             boxShadow: '0 6px 16px rgba(0,0,0,0.08)',
             borderRadius: 6,
             maxHeight: 220,
@@ -637,7 +640,7 @@ const ProjectOffice = () => {
           {workNamePopup.suggestions.map(name => (
             <div
               key={name}
-              style={{ padding: '6px 10px', cursor: 'pointer' }}
+              style={{ padding: '6px 10px', cursor: 'pointer', color: 'var(--text-primary)' }}
               onMouseDown={(e) => {
                 e.preventDefault();
                 const id = workNamePopup.taskId;
@@ -650,6 +653,8 @@ const ProjectOffice = () => {
                 saveCell(id, 'work_name', name);
                 setWorkNamePopup(null);
               }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--table-hover)'}
+              onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
             >{name}</div>
           ))}
         </div>
@@ -659,6 +664,3 @@ const ProjectOffice = () => {
 };
 
 export default ProjectOffice;
-
-
-

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import client from '../api/client';
+import { useToast } from '../context/ToastContext';
 
 const Cities = () => {
   const [cities, setCities] = useState([]);
@@ -9,6 +10,7 @@ const Cities = () => {
     name: '',
     description: ''
   });
+  const { showSuccess, showError } = useToast();
 
   useEffect(() => {
     fetchCities();
@@ -20,6 +22,7 @@ const Cities = () => {
       setCities(response.data);
     } catch (error) {
       console.error('Error fetching cities:', error);
+      showError('Ошибка при загрузке списка объектов');
     }
   };
 
@@ -28,14 +31,16 @@ const Cities = () => {
     try {
       if (editingCity) {
         await client.put(`/cities/${editingCity.id}`, formData);
+        showSuccess('Объект строительства обновлён');
       } else {
         await client.post('/cities', formData);
+        showSuccess('Объект строительства создан');
       }
       fetchCities();
       resetForm();
     } catch (error) {
       console.error('Error saving city:', error);
-      alert('Ошибка при сохранении объекта строительства');
+      showError('Ошибка при сохранении объекта строительства');
     }
   };
 
@@ -52,10 +57,11 @@ const Cities = () => {
     if (window.confirm('Вы уверены, что хотите удалить этот объект строительства?')) {
       try {
         await client.delete(`/cities/${cityId}`);
+        showSuccess('Объект строительства удалён');
         fetchCities();
       } catch (error) {
         console.error('Error deleting city:', error);
-        alert('Ошибка при удалении объекта строительства');
+        showError('Ошибка при удалении объекта строительства');
       }
     }
   };
@@ -75,7 +81,7 @@ const Cities = () => {
         onClick={() => setShowForm(!showForm)}
         style={{ marginBottom: '20px' }}
       >
-        {showForm ? 'Отмена' : 'Добавить объект строительства'}
+        {showForm ? 'Отмена' : '+ Добавить объект строительства'}
       </button>
 
       {showForm && (
@@ -140,17 +146,24 @@ const Cities = () => {
                       onClick={() => handleEdit(city)}
                       style={{ marginRight: '5px' }}
                     >
-                      Редактировать
+                      ✏️ Редактировать
                     </button>
                     <button 
                       className="btn btn-danger btn-sm" 
                       onClick={() => handleDelete(city.id)}
                     >
-                      Удалить
+                      🗑️ Удалить
                     </button>
                   </td>
                 </tr>
               ))}
+              {cities.length === 0 && (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>
+                    Нет объектов строительства. Добавьте первый объект.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

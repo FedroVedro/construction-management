@@ -30,8 +30,6 @@ const ConstructionStages = () => {
     }
   };
 
-// В файле ConstructionStages.js обновите функцию handleSubmit:
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     console.log('Submitting form data:', formData);
