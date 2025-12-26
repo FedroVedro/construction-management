@@ -8,6 +8,23 @@ router = APIRouter()
 
 STATUS_ALLOWED = ['Отложено', 'В работе', 'Не актуально', 'Выполнено']
 
+
+def find_construction_stage(db: Session, city_id: int, work_name: str) -> str:
+    """Поиск этапа строительства по наименованию работ в графиках"""
+    if not work_name or not work_name.strip():
+        return None
+    
+    work = work_name.strip()
+    schedules = db.query(models.Schedule).filter(models.Schedule.city_id == city_id).all()
+    
+    for s in schedules:
+        # Совпадение либо по work_name, либо по sections
+        if (s.work_name and s.work_name.strip() == work) or (s.sections and s.sections.strip() == work):
+            return s.construction_stage
+    
+    return None
+
+
 @router.get("/", response_model=List[schemas.ProjectOfficeTask])
 def read_tasks(
     city_id: int = Query(...),
@@ -19,23 +36,25 @@ def read_tasks(
     query = db.query(models.ProjectOfficeTask).filter(models.ProjectOfficeTask.city_id == city_id)
     tasks = query.order_by(models.ProjectOfficeTask.id.asc()).offset(skip).limit(limit).all()
     
-    # Подтянуть этап строительства по наименованию работ на основе графиков
-    # Линкуем по первому найденному совпадению в schedules (work_name/sections)
+    # Если у задачи нет сохранённого этапа строительства, пытаемся подтянуть из графиков
     if tasks:
-        # Получаем все релевантные графики по городу
         schedules = db.query(models.Schedule).filter(models.Schedule.city_id == city_id).all()
+        
         for t in tasks:
-            stage_name = None
+            # Если этап уже есть - оставляем
+            if t.construction_stage:
+                continue
+            
+            # Пробуем найти по work_name
             work = (t.work_name or '').strip()
             if work:
                 for s in schedules:
-                    # Совпадение либо по work_name, либо по sections
-                    if (s.work_name and s.work_name == work) or (s.sections and s.sections == work):
-                        stage_name = s.construction_stage
+                    if (s.work_name and s.work_name.strip() == work) or (s.sections and s.sections.strip() == work):
+                        t.construction_stage = s.construction_stage
                         break
-            # Добавляем атрибут динамически для сериализации через from_attributes
-            setattr(t, 'construction_stage', stage_name)
+    
     return tasks
+
 
 @router.post("/", response_model=schemas.ProjectOfficeTask)
 def create_task(
@@ -43,11 +62,20 @@ def create_task(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.get_current_user)
 ):
-    db_task = models.ProjectOfficeTask(**task.model_dump(exclude_unset=True))
+    task_data = task.model_dump(exclude_unset=True)
+    
+    # Если construction_stage не указан, но есть work_name - пытаемся найти
+    if not task_data.get('construction_stage') and task_data.get('work_name'):
+        found_stage = find_construction_stage(db, task_data['city_id'], task_data['work_name'])
+        if found_stage:
+            task_data['construction_stage'] = found_stage
+    
+    db_task = models.ProjectOfficeTask(**task_data)
     db.add(db_task)
     db.commit()
     db.refresh(db_task)
     return db_task
+
 
 @router.put("/{task_id}", response_model=schemas.ProjectOfficeTask)
 def update_task(
@@ -60,10 +88,13 @@ def update_task(
     if not db_task:
         raise HTTPException(status_code=404, detail="Запись не найдена")
 
-    # Валидация статуса
-    status_value = update_data.get('status')
-    if status_value is not None and status_value not in STATUS_ALLOWED:
-        raise HTTPException(status_code=422, detail=f"Недопустимый статус: {status_value}")
+    # Валидация статуса (null/пустая строка - очистка статуса, иначе проверяем допустимые значения)
+    if 'status' in update_data:
+        status_value = update_data.get('status')
+        if status_value is None or status_value == '':
+            update_data['status'] = None  # Очистка статуса
+        elif status_value not in STATUS_ALLOWED:
+            raise HTTPException(status_code=422, detail=f"Недопустимый статус: {status_value}")
 
     # Преобразование дат из строк (кроме due_date — это текст)
     for field in ['set_date', 'completion_date']:
@@ -80,6 +111,14 @@ def update_task(
                     except:
                         pass
 
+    # Если обновляется work_name и нет явного construction_stage, пытаемся найти
+    if 'work_name' in update_data and 'construction_stage' not in update_data:
+        work_name = update_data.get('work_name')
+        if work_name:
+            found_stage = find_construction_stage(db, db_task.city_id, work_name)
+            if found_stage:
+                update_data['construction_stage'] = found_stage
+
     for k, v in update_data.items():
         if hasattr(db_task, k):
             setattr(db_task, k, v)
@@ -88,6 +127,7 @@ def update_task(
     db.commit()
     db.refresh(db_task)
     return db_task
+
 
 @router.delete("/{task_id}")
 def delete_task(
@@ -101,5 +141,3 @@ def delete_task(
     db.delete(db_task)
     db.commit()
     return {"message": "Удалено"}
-
-

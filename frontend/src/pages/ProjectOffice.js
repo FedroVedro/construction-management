@@ -153,11 +153,27 @@ const ProjectOffice = () => {
   const findConstructionStage = (workName) => {
     if (!workName || !workName.trim() || !schedulesData.length) return null;
     
-    const trimmedWorkName = workName.trim();
+    const trimmedWorkName = workName.trim().toLowerCase();
     
+    // Сначала ищем точное совпадение
     for (const schedule of schedulesData) {
-      if ((schedule.work_name && schedule.work_name.trim() === trimmedWorkName) ||
-          (schedule.sections && schedule.sections.trim() === trimmedWorkName)) {
+      const scheduleWorkName = (schedule.work_name || '').trim().toLowerCase();
+      const scheduleSections = (schedule.sections || '').trim().toLowerCase();
+      
+      if (scheduleWorkName === trimmedWorkName || scheduleSections === trimmedWorkName) {
+        return schedule.construction_stage || null;
+      }
+    }
+    
+    // Если точного совпадения нет, ищем по вхождению (work_name содержит искомую строку)
+    for (const schedule of schedulesData) {
+      const scheduleWorkName = (schedule.work_name || '').trim().toLowerCase();
+      const scheduleSections = (schedule.sections || '').trim().toLowerCase();
+      
+      if ((scheduleWorkName && scheduleWorkName.includes(trimmedWorkName)) ||
+          (scheduleSections && scheduleSections.includes(trimmedWorkName)) ||
+          (scheduleWorkName && trimmedWorkName.includes(scheduleWorkName)) ||
+          (scheduleSections && trimmedWorkName.includes(scheduleSections))) {
         return schedule.construction_stage || null;
       }
     }
@@ -237,10 +253,10 @@ const ProjectOffice = () => {
     showInfo('Добавлена новая строка');
   };
 
-  const saveCell = async (taskId, field, value) => {
+  const saveCell = async (taskId, field, value, additionalData = {}) => {
     const isNew = taskId.toString().startsWith('new-');
     if (isNew) {
-      const updated = tasks.map(t => t.id === taskId ? { ...t, [field]: value } : t);
+      const updated = tasks.map(t => t.id === taskId ? { ...t, [field]: value, ...additionalData } : t);
       setTasks(updated);
 
       const row = updated.find(t => t.id === taskId);
@@ -248,32 +264,78 @@ const ProjectOffice = () => {
       if (minimalReady) {
         const payload = { ...row };
         delete payload.id;
+        delete payload.isNew;
+        
+        // Убедимся что city_id это число
+        payload.city_id = parseInt(payload.city_id);
+        
         Object.keys(payload).forEach((k) => {
+          // Пустые строки преобразуем в null
           if (payload[k] === '') payload[k] = null;
+          // Удаляем пустой статус полностью (чтобы не было ошибки валидации)
           if (k === 'status' && (payload[k] === '' || payload[k] == null)) {
             delete payload[k];
           }
         });
+        
         try {
           const res = await client.post('/project-office', payload);
           setTasks(prev => prev.map(t => t.id === taskId ? res.data : t));
           showSuccess('Задача создана');
         } catch (e) {
-          console.error(e);
-          showError(e?.response?.data?.detail || 'Ошибка сохранения');
+          console.error('Error creating task:', e);
+          const errorMsg = e?.response?.data?.detail;
+          if (typeof errorMsg === 'string') {
+            showError(errorMsg);
+          } else if (Array.isArray(errorMsg)) {
+            showError(errorMsg.map(err => err.msg || err).join(', '));
+          } else {
+            showError('Ошибка сохранения');
+          }
           fetchTasks();
         }
       }
       return;
     }
 
-    const processed = (typeof value === 'string') ? (value.trim() === '' ? null : value.trim()) : value;
+    let processed = value;
+    if (typeof value === 'string') {
+      processed = value.trim() === '' ? null : value.trim();
+    }
+    
+    // Формируем данные для обновления
+    const updatePayload = { ...additionalData };
+    
+    // Для статуса: если пустая строка или null - не отправляем вообще (оставляем как есть на сервере)
+    // или отправляем null для очистки
+    if (field === 'status') {
+      if (processed === null || processed === '') {
+        updatePayload[field] = null;
+      } else {
+        updatePayload[field] = processed;
+      }
+    } else {
+      updatePayload[field] = processed;
+    }
+    
+    // Обрабатываем additionalData для construction_stage
+    if (additionalData.construction_stage !== undefined) {
+      updatePayload.construction_stage = additionalData.construction_stage;
+    }
+    
     try {
-      await client.put(`/project-office/${taskId}`, { [field]: processed });
-      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, [field]: processed } : t));
+      await client.put(`/project-office/${taskId}`, updatePayload);
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, [field]: processed, ...additionalData } : t));
     } catch (e) {
-      console.error(e);
-      showError(e?.response?.data?.detail || 'Ошибка сохранения');
+      console.error('Error updating task:', e);
+      const errorMsg = e?.response?.data?.detail;
+      if (typeof errorMsg === 'string') {
+        showError(errorMsg);
+      } else if (Array.isArray(errorMsg)) {
+        showError(errorMsg.map(err => err.msg || err).join(', '));
+      } else {
+        showError('Ошибка сохранения');
+      }
       fetchTasks();
     }
   };
@@ -379,7 +441,11 @@ const ProjectOffice = () => {
               setWorkNamePopup({ taskId: task.id, suggestions: sugg, rect, up });
             }}
             onBlur={() => {
-              saveCell(task.id, 'work_name', task.work_name || '');
+              const currentTask = tasks.find(t => t.id === task.id);
+              const constructionStage = findConstructionStage(currentTask?.work_name || '');
+              saveCell(task.id, 'work_name', currentTask?.work_name || '', 
+                constructionStage ? { construction_stage: constructionStage } : {}
+              );
               setTimeout(() => setWorkNamePopup(prev => (prev && prev.taskId === task.id ? null : prev)), 120);
             }}
             onKeyDown={onTextareaKeyDown}
@@ -582,17 +648,14 @@ const ProjectOffice = () => {
                 </td>
                 <td>{renderEditable(t, 'initiator')}</td>
                 <td>
-                  <input 
-                    type="text" 
-                    value={t.construction_stage ? `${getStageNumber(t.construction_stage)} ${t.construction_stage}` : ''} 
-                    readOnly 
-                    style={{ 
-                      width: '100%', 
-                      background: t.construction_stage ? '#e8f5e8' : 'var(--table-stripe)',
-                      border: t.construction_stage ? '1px solid #28a745' : '1px solid var(--border-color)',
-                      color: t.construction_stage ? '#155724' : 'var(--text-muted)'
-                    }} 
-                    placeholder="Этап строительства"
+                  <StageCell 
+                    task={t}
+                    stages={stages}
+                    getStageNumber={getStageNumber}
+                    onSave={(value) => saveCell(t.id, 'construction_stage', value)}
+                    onChange={(value) => setTasks(prev => prev.map(task => 
+                      task.id === t.id ? { ...task, construction_stage: value } : task
+                    ))}
                   />
                 </td>
                 <td>{renderEditable(t, 'work_name')}</td>
@@ -650,12 +713,121 @@ const ProjectOffice = () => {
                   work_name: name,
                   construction_stage: constructionStage
                 } : t));
-                saveCell(id, 'work_name', name);
+                // Сохраняем и work_name и construction_stage
+                saveCell(id, 'work_name', name, 
+                  constructionStage ? { construction_stage: constructionStage } : {}
+                );
                 setWorkNamePopup(null);
               }}
               onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--table-hover)'}
               onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
             >{name}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Компонент для редактирования этапа строительства
+const StageCell = ({ task, stages, getStageNumber, onSave, onChange }) => {
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [inputValue, setInputValue] = useState(task.construction_stage || '');
+  const containerRef = React.useRef(null);
+
+  React.useEffect(() => {
+    setInputValue(task.construction_stage || '');
+  }, [task.construction_stage]);
+
+  React.useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setShowDropdown(false);
+      }
+    };
+    if (showDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showDropdown]);
+
+  const filteredStages = stages.filter(s => 
+    s.name.toLowerCase().includes((inputValue || '').toLowerCase())
+  );
+
+  const handleSelect = (stageName) => {
+    setInputValue(stageName);
+    onChange(stageName);
+    onSave(stageName);
+    setShowDropdown(false);
+  };
+
+  const displayValue = task.construction_stage 
+    ? `${getStageNumber(task.construction_stage)} ${task.construction_stage}` 
+    : '';
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative' }}>
+      <input 
+        type="text" 
+        value={showDropdown ? inputValue : displayValue}
+        onFocus={() => {
+          setInputValue(task.construction_stage || '');
+          setShowDropdown(true);
+        }}
+        onChange={(e) => {
+          setInputValue(e.target.value);
+          setShowDropdown(true);
+        }}
+        onBlur={() => {
+          // Даём время на клик по выпадающему списку
+          setTimeout(() => {
+            if (inputValue !== task.construction_stage) {
+              onChange(inputValue);
+              onSave(inputValue);
+            }
+          }, 150);
+        }}
+        style={{ 
+          width: '100%', 
+          background: task.construction_stage ? '#e8f5e8' : 'var(--table-stripe)',
+          border: task.construction_stage ? '1px solid #28a745' : '1px solid var(--border-color)',
+          color: task.construction_stage ? '#155724' : 'var(--text-primary)'
+        }} 
+        placeholder="Этап строительства"
+      />
+      {showDropdown && filteredStages.length > 0 && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          right: 0,
+          zIndex: 9999,
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-color)',
+          borderRadius: 6,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+          maxHeight: 200,
+          overflowY: 'auto'
+        }}>
+          {filteredStages.map((stage, idx) => (
+            <div
+              key={stage.id}
+              style={{ 
+                padding: '8px 12px', 
+                cursor: 'pointer',
+                borderBottom: idx < filteredStages.length - 1 ? '1px solid var(--border-color)' : 'none'
+              }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                handleSelect(stage.name);
+              }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--table-hover)'}
+              onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+            >
+              <span style={{ fontWeight: 600, marginRight: 8 }}>{idx + 1}.</span>
+              {stage.name}
+            </div>
           ))}
         </div>
       )}

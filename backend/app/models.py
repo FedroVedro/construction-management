@@ -97,6 +97,7 @@ class ProjectOfficeTask(Base):
 
     set_date = Column(DateTime, nullable=True)  # Дата постановки
     initiator = Column(String, nullable=True)  # Постановщик
+    construction_stage = Column(String, nullable=True)  # Этап строительства
     task = Column(Text, nullable=True)  # Задача
     work_name = Column(String, nullable=True)  # Наименование работ
     responsible = Column(String, nullable=True)  # Ответственный

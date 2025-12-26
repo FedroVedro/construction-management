@@ -1,4 +1,5 @@
 // Утилиты для работы с графиками
+import * as XLSX from 'xlsx';
 
 /**
  * Форматирование даты для input[type="date"]
@@ -227,6 +228,108 @@ export const exportToCSV = (data, columns, filename = 'export.csv') => {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+};
+
+/**
+ * Экспорт данных в Excel
+ */
+export const exportToExcel = (data, columns, filename = 'export.xlsx', sheetName = 'Данные') => {
+  // Подготавливаем данные для Excel
+  const excelData = data.map(item => {
+    const row = {};
+    columns.forEach(col => {
+      let value = item[col.field];
+      
+      // Форматирование дат
+      if (col.type === 'date' && value) {
+        value = formatDateDisplay(value);
+      }
+      
+      // Форматирование чисел
+      if (col.type === 'number' && value !== null && value !== undefined) {
+        value = parseFloat(value);
+      }
+      
+      row[col.label] = value ?? '';
+    });
+    return row;
+  });
+
+  // Создаём книгу и лист
+  const workbook = XLSX.utils.book_new();
+  const worksheet = XLSX.utils.json_to_sheet(excelData);
+
+  // Устанавливаем ширину столбцов
+  const colWidths = columns.map(col => {
+    // Базовая ширина на основе заголовка
+    let width = col.label.length + 2;
+    
+    // Проверяем данные для определения максимальной ширины
+    data.forEach(item => {
+      const value = item[col.field];
+      if (value) {
+        const strLen = String(value).length;
+        if (strLen > width) width = strLen;
+      }
+    });
+    
+    // Ограничиваем максимальную ширину
+    return { wch: Math.min(width, 50) };
+  });
+  worksheet['!cols'] = colWidths;
+
+  // Добавляем лист в книгу
+  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+
+  // Скачиваем файл
+  XLSX.writeFile(workbook, filename);
+};
+
+/**
+ * Экспорт данных в Excel с несколькими листами
+ */
+export const exportToExcelMultiSheet = (sheets, filename = 'export.xlsx') => {
+  const workbook = XLSX.utils.book_new();
+
+  sheets.forEach(({ data, columns, sheetName }) => {
+    const excelData = data.map(item => {
+      const row = {};
+      columns.forEach(col => {
+        let value = item[col.field];
+        
+        if (col.type === 'date' && value) {
+          value = formatDateDisplay(value);
+        }
+        
+        if (col.type === 'number' && value !== null && value !== undefined) {
+          value = parseFloat(value);
+        }
+        
+        row[col.label] = value ?? '';
+      });
+      return row;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(excelData);
+
+    // Устанавливаем ширину столбцов
+    const colWidths = columns.map(col => {
+      let width = col.label.length + 2;
+      data.forEach(item => {
+        const value = item[col.field];
+        if (value) {
+          const strLen = String(value).length;
+          if (strLen > width) width = strLen;
+        }
+      });
+      return { wch: Math.min(width, 50) };
+    });
+    worksheet['!cols'] = colWidths;
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName.substring(0, 31)); // Excel ограничивает имя листа 31 символом
+  });
+
+  XLSX.writeFile(workbook, filename);
 };
 
 /**

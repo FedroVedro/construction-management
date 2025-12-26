@@ -209,8 +209,8 @@ class ProjectOfficeTaskBase(BaseModel):
 
     @validator('status')
     def validate_status(cls, v):
-        if v is None:
-            return v
+        if v is None or v == '':
+            return None
         allowed = ['Отложено', 'В работе', 'Не актуально', 'Выполнено']
         if v not in allowed:
             raise ValueError(f"Недопустимый статус: {v}. Разрешены: {allowed}")
@@ -222,6 +222,7 @@ class ProjectOfficeTaskCreate(ProjectOfficeTaskBase):
 class ProjectOfficeTaskUpdate(BaseModel):
     set_date: Optional[Union[datetime, str]] = None
     initiator: Optional[str] = None
+    construction_stage: Optional[str] = None
     work_name: Optional[str] = None
     task: Optional[str] = None
     responsible: Optional[str] = None
@@ -251,8 +252,8 @@ class ProjectOfficeTaskUpdate(BaseModel):
 
     @validator('status')
     def validate_status_update(cls, v):
-        if v is None:
-            return v
+        if v is None or v == '':
+            return None
         allowed = ['Отложено', 'В работе', 'Не актуально', 'Выполнено']
         if v not in allowed:
             raise ValueError(f"Недопустимый статус: {v}. Разрешены: {allowed}")

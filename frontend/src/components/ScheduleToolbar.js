@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { exportToCSV } from '../utils/scheduleHelpers';
+import React, { useState, useEffect, useRef } from 'react';
+import { exportToCSV, exportToExcel } from '../utils/scheduleHelpers';
 
 /**
  * Панель инструментов для графиков
@@ -19,14 +19,37 @@ const ScheduleToolbar = ({
   onToggleCalendar = null
 }) => {
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const menuRef = useRef(null);
 
-  const handleExportCSV = () => {
+  // Закрытие меню при клике вне
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setShowExportMenu(false);
+      }
+    };
+
+    if (showExportMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showExportMenu]);
+
+  const getExportFilename = (ext) => {
     const city = cities.find(c => c.id === selectedCity);
     const cityName = city ? city.name : 'all';
     const date = new Date().toISOString().split('T')[0];
-    const exportFilename = `${filename}_${cityName}_${date}.csv`;
-    
-    exportToCSV(schedules, columns, exportFilename);
+    return `${filename}_${cityName}_${date}.${ext}`;
+  };
+
+  const handleExportCSV = () => {
+    exportToCSV(schedules, columns, getExportFilename('csv'));
+    setShowExportMenu(false);
+  };
+
+  const handleExportExcel = () => {
+    const sheetName = getScheduleTypeName(scheduleType);
+    exportToExcel(schedules, columns, getExportFilename('xlsx'), sheetName);
     setShowExportMenu(false);
   };
 
@@ -88,39 +111,36 @@ const ScheduleToolbar = ({
           </button>
           
           {showExportMenu && (
-            <div style={{
-              position: 'absolute',
-              top: '100%',
-              right: 0,
-              marginTop: '4px',
-              backgroundColor: 'var(--bg-card)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '8px',
-              boxShadow: '0 4px 12px var(--shadow-color)',
-              zIndex: 100,
-              minWidth: '160px',
-              overflow: 'hidden'
-            }}>
-              <button
+            <div 
+              ref={menuRef}
+              style={{
+                position: 'absolute',
+                top: '100%',
+                right: 0,
+                marginTop: '4px',
+                backgroundColor: 'var(--bg-card)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '8px',
+                boxShadow: '0 4px 12px var(--shadow-color)',
+                zIndex: 100,
+                minWidth: '180px',
+                overflow: 'hidden'
+              }}
+            >
+              <ExportMenuItem
+                icon="📊"
+                label="Экспорт в Excel"
+                sublabel=".xlsx"
+                onClick={handleExportExcel}
+                color="#217346"
+              />
+              <ExportMenuItem
+                icon="📄"
+                label="Экспорт в CSV"
+                sublabel=".csv"
                 onClick={handleExportCSV}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  width: '100%',
-                  padding: '10px 16px',
-                  border: 'none',
-                  backgroundColor: 'transparent',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  fontSize: '14px',
-                  color: 'var(--text-primary)'
-                }}
-                onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--table-hover)'}
-                onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-              >
-                📄 Экспорт в CSV
-              </button>
+                color="#6c757d"
+              />
             </div>
           )}
         </div>
@@ -241,6 +261,64 @@ const StatBadge = ({ icon, count, label, color }) => (
     <span style={{ opacity: 0.8 }}>{label}</span>
   </div>
 );
+
+const ExportMenuItem = ({ icon, label, sublabel, onClick, color }) => {
+  const [isHovered, setIsHovered] = useState(false);
+  
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        width: '100%',
+        padding: '12px 16px',
+        border: 'none',
+        backgroundColor: isHovered ? 'var(--table-hover)' : 'transparent',
+        cursor: 'pointer',
+        textAlign: 'left',
+        fontSize: '14px',
+        color: 'var(--text-primary)',
+        transition: 'background-color 0.15s'
+      }}
+    >
+      <span style={{ 
+        fontSize: '18px',
+        width: '24px',
+        textAlign: 'center'
+      }}>
+        {icon}
+      </span>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontWeight: 500 }}>{label}</div>
+        {sublabel && (
+          <div style={{ 
+            fontSize: '11px', 
+            color: color || 'var(--text-muted)',
+            marginTop: '2px'
+          }}>
+            {sublabel}
+          </div>
+        )}
+      </div>
+    </button>
+  );
+};
+
+const getScheduleTypeName = (type) => {
+  const names = {
+    construction: 'Строительство',
+    document: 'Документация',
+    procurement: 'Закупки',
+    hr: 'HR',
+    marketing: 'Маркетинг',
+    directive: 'Директивный'
+  };
+  return names[type] || 'График';
+};
 
 export default ScheduleToolbar;
 

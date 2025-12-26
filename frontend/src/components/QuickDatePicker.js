@@ -3,43 +3,55 @@ import { getQuickDates, formatDateForInput, addDaysToDate } from '../utils/sched
 
 /**
  * Компонент быстрого выбора дат
- * 
- * @param {string} value - текущее значение даты
- * @param {function} onChange - функция для изменения значения в state
- * @param {function} onSave - функция для сохранения значения (вызывается с новым значением)
- * @param {boolean} disabled - отключен ли компонент
- * @param {string} placeholder - placeholder для input
- * @param {string} relatedDate - связанная дата для расчёта относительных дат
- * @param {boolean} isEndDate - является ли это датой окончания
  */
 const QuickDatePicker = ({ 
   value, 
   onChange, 
   onSave,
-  onBlur, // для обратной совместимости
+  onBlur,
   disabled = false,
   placeholder = '',
   relatedDate = null,
   isEndDate = false
 }) => {
   const [showPopup, setShowPopup] = useState(false);
+  const [popupPosition, setPopupPosition] = useState({ top: 0, left: 0 });
   const containerRef = useRef(null);
+  const buttonRef = useRef(null);
+  const inputRef = useRef(null);
   
   const quickDates = getQuickDates();
 
-  // Функция сохранения - использует onSave если есть, иначе onBlur
+  // Открыть календарь браузера
+  const openCalendar = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (inputRef.current) {
+      inputRef.current.showPicker();
+    }
+  }, []);
+
   const save = useCallback((newValue) => {
     if (onSave) {
       onSave(newValue);
     } else if (onBlur) {
-      // Сначала обновляем state
       if (onChange) {
         onChange(newValue);
       }
-      // Даём React время обновить state, потом вызываем onBlur
       setTimeout(() => onBlur(), 0);
     }
   }, [onSave, onBlur, onChange]);
+
+  // Вычисление позиции popup
+  const updatePopupPosition = useCallback(() => {
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setPopupPosition({
+        top: rect.bottom + 4,
+        left: Math.max(10, rect.left - 140) // Смещаем влево чтобы не выходило за экран
+      });
+    }
+  }, []);
 
   // Закрытие popup при клике вне
   useEffect(() => {
@@ -51,7 +63,6 @@ const QuickDatePicker = ({
       }
     };
     
-    // Используем setTimeout чтобы не конфликтовать с текущим кликом
     const timer = setTimeout(() => {
       document.addEventListener('click', handleClickOutside, true);
     }, 0);
@@ -63,13 +74,11 @@ const QuickDatePicker = ({
   }, [showPopup]);
 
   const handleQuickDate = useCallback((date) => {
-    // Обновляем значение в state
     if (onChange) {
       onChange(date);
     }
     setShowPopup(false);
     
-    // Сохраняем с небольшой задержкой чтобы state успел обновиться
     setTimeout(() => {
       save(date);
     }, 10);
@@ -92,8 +101,9 @@ const QuickDatePicker = ({
   const togglePopup = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation();
+    updatePopupPosition();
     setShowPopup(prev => !prev);
-  }, []);
+  }, [updatePopupPosition]);
 
   const handleInputChange = useCallback((e) => {
     const newValue = e.target.value;
@@ -103,7 +113,6 @@ const QuickDatePicker = ({
   }, [onChange]);
 
   const handleInputBlur = useCallback(() => {
-    // При blur инпута сохраняем текущее значение
     save(value);
   }, [save, value]);
 
@@ -111,6 +120,7 @@ const QuickDatePicker = ({
     <div ref={containerRef} style={{ position: 'relative' }}>
       <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
         <input
+          ref={inputRef}
           type="date"
           value={formatDateForInput(value)}
           onChange={handleInputChange}
@@ -120,43 +130,65 @@ const QuickDatePicker = ({
           style={{ flex: 1, minWidth: '120px' }}
         />
         {!disabled && (
-          <button
-            type="button"
-            onClick={togglePopup}
-            style={{
-              padding: '4px 8px',
-              border: '1px solid var(--border-color, #dee2e6)',
-              borderRadius: '4px',
-              backgroundColor: 'var(--bg-secondary, #f8f9fa)',
-              cursor: 'pointer',
-              fontSize: '14px',
-              lineHeight: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0
-            }}
-            title="Быстрый выбор даты"
-          >
-            📅
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={openCalendar}
+              style={{
+                padding: '4px 8px',
+                border: '1px solid var(--border-color, #dee2e6)',
+                borderRadius: '4px',
+                backgroundColor: 'var(--bg-secondary, #f8f9fa)',
+                cursor: 'pointer',
+                fontSize: '14px',
+                lineHeight: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}
+              title="Открыть календарь"
+            >
+              🗓️
+            </button>
+            <button
+              ref={buttonRef}
+              type="button"
+              onClick={togglePopup}
+              style={{
+                padding: '4px 8px',
+                border: '1px solid var(--border-color, #dee2e6)',
+                borderRadius: '4px',
+                backgroundColor: 'var(--bg-secondary, #f8f9fa)',
+                cursor: 'pointer',
+                fontSize: '14px',
+                lineHeight: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}
+              title="Быстрый выбор даты"
+            >
+              ⚡
+            </button>
+          </>
         )}
       </div>
       
       {showPopup && !disabled && (
         <div
           style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            zIndex: 9999,
+            position: 'fixed',
+            top: popupPosition.top,
+            left: popupPosition.left,
+            zIndex: 99999,
             backgroundColor: 'var(--bg-card, white)',
             border: '1px solid var(--border-color, #dee2e6)',
             borderRadius: '8px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
             padding: '10px',
-            minWidth: '180px',
-            marginTop: '4px'
+            minWidth: '180px'
           }}
         >
           <div style={{ 

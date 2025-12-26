@@ -8,7 +8,6 @@ import ScheduleFilters from '../components/ScheduleFilters';
 import ScheduleToolbar from '../components/ScheduleToolbar';
 import QuickDatePicker from '../components/QuickDatePicker';
 import RowActions from '../components/RowActions';
-import StatusIndicator, { getRowStatusStyle, ProgressBar } from '../components/StatusIndicator';
 import { saveScheduleOrder, applyScheduleOrder } from '../utils/scheduleOrderStorage';
 import { saveSelectedCity, getSelectedCity, saveViewMode, getViewMode } from '../utils/userPreferences';
 import { validateDates, prepareRowForCopy } from '../utils/scheduleHelpers';
@@ -442,7 +441,6 @@ const DocumentSchedule = () => {
                 <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--table-stripe)', zIndex: 10 }}>
                   <tr>
                     <th style={{ width: '50px', border: '1px solid var(--border-color)', padding: '8px' }}>№</th>
-                    <th style={{ width: '60px', border: '1px solid var(--border-color)', padding: '8px' }}>Статус</th>
                     {canEdit && <th style={{ width: '90px', border: '1px solid var(--border-color)', padding: '8px' }}>Действия</th>}
                     <th style={{ minWidth: '200px', border: '1px solid var(--border-color)', padding: '8px' }}>Этап строительства</th>
                     <th style={{ minWidth: '300px', border: '1px solid var(--border-color)', padding: '8px' }}>Наименование работ</th>
@@ -456,16 +454,12 @@ const DocumentSchedule = () => {
                 </thead>
                 <tbody>
                   {filteredSchedules.map((schedule, index) => {
-                    const rowStyle = schedule.isNew ? { backgroundColor: '#e8f5e9' } : getRowStatusStyle(schedule);
+                    const rowStyle = schedule.isNew ? { backgroundColor: '#e8f5e9' } : {};
                     
                     return (
                       <tr key={schedule.id} style={{ ...rowStyle, transition: 'background-color 0.3s' }}>
                         <td style={{ textAlign: 'center', border: '1px solid var(--border-color)', padding: '8px' }}>
                           {schedule.isNew ? '★' : index + 1}
-                        </td>
-                        <td style={{ textAlign: 'center', border: '1px solid var(--border-color)', padding: '8px' }}>
-                          <StatusIndicator schedule={schedule} />
-                          <div style={{ marginTop: '4px' }}><ProgressBar schedule={schedule} /></div>
                         </td>
                         {canEdit && (
                           <td style={{ textAlign: 'center', border: '1px solid var(--border-color)', padding: '8px' }}>
@@ -492,7 +486,7 @@ const DocumentSchedule = () => {
                   })}
                   {filteredSchedules.length === 0 && (
                     <tr>
-                      <td colSpan={canEdit ? 11 : 10} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                      <td colSpan={canEdit ? 10 : 9} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                         <div style={{ fontSize: '48px', marginBottom: '16px' }}>📄</div>
                         <div>Нет данных для отображения</div>
                         {canEdit && (
