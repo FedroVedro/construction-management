@@ -69,6 +69,7 @@ const Navbar = () => {
             <Link to="/directive-schedule" style={linkStyle}>Директивный график</Link>
             <Link to="/marketing-schedule" style={linkStyle}>График маркетинга</Link>
             <Link to="/project-office" style={linkStyle}>Проектный офис</Link>
+            <Link to="/strategic-map" style={{...linkStyle, color: '#a78bfa', fontWeight: 500}}>📊 Мастер-карта</Link>
             {user?.role === 'admin' && (
               <Link to="/telegram-settings" style={linkStyle}>Настройки Telegram</Link>
             )}

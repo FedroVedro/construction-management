@@ -266,3 +266,103 @@ class ProjectOfficeTask(ProjectOfficeTaskBase):
 
     class Config:
         from_attributes = True
+
+
+# Strategic Map schemas
+class StrategicMapMilestoneBase(BaseModel):
+    month_date: Union[datetime, str]
+    milestone_type: Optional[str] = None
+    value: Optional[str] = None
+    area_value: Optional[float] = None  # Значение площади в м2 (вторая строка)
+    color: Optional[str] = None
+    is_key_milestone: Optional[bool] = False
+
+    @validator('month_date', pre=True)
+    def parse_month_date(cls, v):
+        if v is None:
+            return v
+        if isinstance(v, str):
+            try:
+                return datetime.fromisoformat(v.replace('Z', '+00:00'))
+            except:
+                try:
+                    return datetime.strptime(v, '%Y-%m-%d')
+                except:
+                    raise ValueError(f'Неверный формат даты: {v}')
+        return v
+
+
+class StrategicMapMilestoneCreate(StrategicMapMilestoneBase):
+    pass
+
+
+class StrategicMapMilestoneUpdate(BaseModel):
+    milestone_type: Optional[str] = None
+    value: Optional[str] = None
+    area_value: Optional[float] = None  # Значение площади в м2 (вторая строка)
+    color: Optional[str] = None
+    is_key_milestone: Optional[bool] = None
+
+
+class StrategicMapMilestone(StrategicMapMilestoneBase):
+    id: int
+    project_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class StrategicMapProjectBase(BaseModel):
+    city_id: Optional[int] = None
+    name: str
+    planned_area: Optional[float] = None
+    total_area: Optional[float] = None
+    floors: Optional[int] = None
+    construction_duration: Optional[int] = None
+    current_status: Optional[str] = None  # Текущий статус (РНВ, стр-во, ПФ, РНС и т.д.)
+    sections_count: Optional[int] = None  # Кол-во секций
+    sellable_area: Optional[float] = None  # Продаваемая площадь (М2)
+    order_index: Optional[int] = 0
+    is_subtotal: Optional[bool] = False
+    is_total: Optional[bool] = False
+    parent_group: Optional[str] = None
+    parent_id: Optional[int] = None
+
+
+class StrategicMapProjectCreate(StrategicMapProjectBase):
+    milestones: Optional[List[StrategicMapMilestoneCreate]] = []
+
+
+class StrategicMapProjectUpdate(BaseModel):
+    city_id: Optional[int] = None
+    name: Optional[str] = None
+    planned_area: Optional[float] = None
+    total_area: Optional[float] = None
+    floors: Optional[int] = None
+    construction_duration: Optional[int] = None
+    current_status: Optional[str] = None
+    sections_count: Optional[int] = None
+    sellable_area: Optional[float] = None
+    order_index: Optional[int] = None
+    is_subtotal: Optional[bool] = None
+    is_total: Optional[bool] = None
+    parent_group: Optional[str] = None
+    parent_id: Optional[int] = None
+
+
+class StrategicMapProject(StrategicMapProjectBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    milestones: List[StrategicMapMilestone] = []
+
+    class Config:
+        from_attributes = True
+
+
+class StrategicMapBulkUpdate(BaseModel):
+    """Массовое обновление вех для проекта"""
+    project_id: int
+    milestones: List[StrategicMapMilestoneCreate]

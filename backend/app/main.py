@@ -2,9 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from . import models
 from .database import engine
-from .routers import auth, users, cities, schedules, dashboard, construction_stages, project_office
+from .routers import auth, users, cities, schedules, dashboard, construction_stages, project_office, strategic_map
 
-models.Base.metadata.create_all(bind=engine)
+# Создание таблиц отключено из-за проблем с поврежденной БД
+# Используйте create_new_database.py для создания новой БД
+# models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Construction Management API")
 
@@ -23,6 +25,7 @@ app.include_router(construction_stages.router, prefix="/api/construction-stages"
 app.include_router(schedules.router, prefix="/api/schedules", tags=["schedules"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"])
 app.include_router(project_office.router, prefix="/api/project-office", tags=["project_office"])
+app.include_router(strategic_map.router, prefix="/api", tags=["strategic_map"])
 
 @app.get("/")
 def read_root():

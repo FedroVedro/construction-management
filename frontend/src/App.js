@@ -16,6 +16,7 @@ import ConstructionSchedule from './pages/ConstructionSchedule';
 import DirectiveSchedule from './pages/DirectiveSchedule';
 import MarketingSchedule from './pages/MarketingSchedule';
 import ProjectOffice from './pages/ProjectOffice';
+import StrategicMap from './pages/StrategicMap';
 import TelegramSettings from './pages/TelegramSettings';
 import './App.css';
 
@@ -39,6 +40,7 @@ function App() {
                   <Route path="directive-schedule" element={<DirectiveSchedule />} />
                   <Route path="marketing-schedule" element={<MarketingSchedule />} />
                   <Route path="project-office" element={<ProjectOffice />} />
+                  <Route path="strategic-map" element={<StrategicMap />} />
                   <Route path="telegram-settings" element={<TelegramSettings />} />
                 </Route>
               </Route>

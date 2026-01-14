@@ -115,3 +115,55 @@ class ProjectOfficeTask(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     city = relationship("City")
+
+
+class StrategicMapProject(Base):
+    """Проект в мастер-карте стратегического развития"""
+    __tablename__ = "strategic_map_projects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    city_id = Column(Integer, ForeignKey("cities.id"), nullable=True)  # Связь с объектом строительства
+    
+    name = Column(String, nullable=False)  # Название проекта (например, "Краснодар 1")
+    planned_area = Column(Float, nullable=True)  # Плановая площадь, м2
+    total_area = Column(Float, nullable=True)  # Общая площадь
+    floors = Column(Integer, nullable=True)  # Этажность
+    construction_duration = Column(Integer, nullable=True)  # Срок строительства, мес
+    
+    # Новые поля
+    current_status = Column(String, nullable=True)  # Текущий статус (РНВ, стр-во, ПФ, РНС и т.д.)
+    sections_count = Column(Integer, nullable=True)  # Кол-во секций
+    sellable_area = Column(Float, nullable=True)  # Продаваемая площадь (М2)
+    
+    order_index = Column(Integer, default=0)  # Порядок сортировки
+    is_subtotal = Column(Boolean, default=False)  # Это строка подытога
+    is_total = Column(Boolean, default=False)  # Это итоговая строка
+    parent_group = Column(String, nullable=True)  # Группа (для подытогов)
+    parent_id = Column(Integer, ForeignKey("strategic_map_projects.id"), nullable=True) # Родительский проект
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    city = relationship("City")
+    parent = relationship("StrategicMapProject", remote_side=[id], backref="children")
+    milestones = relationship("StrategicMapMilestone", back_populates="project", cascade="all, delete-orphan")
+
+
+class StrategicMapMilestone(Base):
+    """Вехи/этапы в мастер-карте - привязка к месяцам"""
+    __tablename__ = "strategic_map_milestones"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("strategic_map_projects.id"), nullable=False)
+    
+    month_date = Column(DateTime, nullable=False)  # Месяц (первое число месяца)
+    milestone_type = Column(String, nullable=True)  # Тип вехи: РНС, Продажа, Строительство и т.д. (первая строка - статус)
+    value = Column(Text, nullable=True)  # Значение/описание (может быть числом или текстом)
+    area_value = Column(Float, nullable=True)  # Значение площади в м2 (вторая строка)
+    color = Column(String, nullable=True)  # Цвет ячейки (hex)
+    is_key_milestone = Column(Boolean, default=False)  # Ключевая веха (РНС, завершение)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    project = relationship("StrategicMapProject", back_populates="milestones")
