@@ -26,6 +26,7 @@ class City(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     schedules = relationship("Schedule", back_populates="city")
+    strategic_projects = relationship("StrategicMapProject", back_populates="city", cascade="all, delete-orphan")
 
 class ConstructionStage(Base):
     __tablename__ = "construction_stages"
@@ -144,7 +145,7 @@ class StrategicMapProject(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    city = relationship("City")
+    city = relationship("City", back_populates="strategic_projects")
     parent = relationship("StrategicMapProject", remote_side=[id], backref="children")
     milestones = relationship("StrategicMapMilestone", back_populates="project", cascade="all, delete-orphan")
 

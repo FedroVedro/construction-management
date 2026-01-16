@@ -374,7 +374,7 @@ def sync_projects_from_cities(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Автоматически создать проекты из объектов строительства"""
+    """Автоматически синхронизировать проекты с объектами строительства"""
     if current_user.role not in ['admin', 'department_user']:
         raise HTTPException(status_code=403, detail="Недостаточно прав")
     
@@ -382,10 +382,26 @@ def sync_projects_from_cities(
         cities = db.query(City).all()
         created_count = 0
         updated_count = 0
+        deleted_count = 0
+        
+        # Получаем все существующие ID городов
+        city_ids = {city.id for city in cities}
+        
+        # Получаем все проекты, привязанные к городам
+        all_projects = db.query(StrategicMapProject).filter(
+            StrategicMapProject.city_id.isnot(None)
+        ).all()
+        
+        # Удаляем проекты для городов, которых больше нет
+        for project in all_projects:
+            if project.city_id not in city_ids:
+                db.delete(project)
+                deleted_count += 1
         
         # Получаем максимальный order_index для новых проектов
         max_order = db.query(func.max(StrategicMapProject.order_index)).scalar() or 0
         
+        # Создаём или обновляем проекты для существующих городов
         for city in cities:
             try:
                 # Проверяем, существует ли уже проект для этого города
@@ -418,6 +434,7 @@ def sync_projects_from_cities(
             "status": "synced",
             "created": created_count,
             "updated": updated_count,
+            "deleted": deleted_count,
             "total": len(cities)
         }
     except Exception as e:

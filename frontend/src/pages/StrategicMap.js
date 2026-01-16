@@ -25,24 +25,30 @@ const StrategicMap = () => {
   const [editAreaValue, setEditAreaValue] = useState('');
   const [selectedMilestoneType, setSelectedMilestoneType] = useState('');
   const [searchText, setSearchText] = useState('');
-  const [viewMode, setViewMode] = useState('timeline'); // 'timeline' | 'table'
   const [yearFilter, setYearFilter] = useState('all');
   const [quickFillType, setQuickFillType] = useState(null); // 'РНС', 'Продажа' etc.
   const [updatingCells, setUpdatingCells] = useState(new Set()); // Набор `${projectId}-${dateStr}`
   const [hoveredRow, setHoveredRow] = useState(null);
+  const [startYear, setStartYear] = useState(2022);
+  const [endYear, setEndYear] = useState(2028);
+  const [yearRangeLimits, setYearRangeLimits] = useState({ min: 2018, max: 2035 });
+  const [updatingProjectFields, setUpdatingProjectFields] = useState(new Set()); // `${projectId}-${field}`
+  const [projectFieldEdits, setProjectFieldEdits] = useState({});
+  const [editingAreaCell, setEditingAreaCell] = useState(null); // { projectId, date, displayDate }
+  const [areaEditValue, setAreaEditValue] = useState('');
   
   const tableRef = useRef(null);
 
-  // Генерация месяцев для временной шкалы (с 2022 по 2028)
+  // Генерация месяцев для временной шкалы (с startYear по endYear)
   const months = useMemo(() => {
     const result = [];
-    for (let year = 2022; year <= 2028; year++) {
+    for (let year = startYear; year <= endYear; year++) {
       for (let month = 0; month < 12; month++) {
         result.push(new Date(year, month, 1));
       }
     }
     return result;
-  }, []);
+  }, [startYear, endYear]);
 
   // Фильтруем месяцы по году
   const filteredMonths = useMemo(() => {
@@ -64,6 +70,15 @@ const StrategicMap = () => {
       grouped[key].push(date);
     });
     return grouped;
+  }, [filteredMonths]);
+
+  const yearsInView = useMemo(() => {
+    const years = [];
+    filteredMonths.forEach(date => {
+      const year = date.getFullYear();
+      if (!years.includes(year)) years.push(year);
+    });
+    return years;
   }, [filteredMonths]);
 
   useEffect(() => {
@@ -101,16 +116,40 @@ const StrategicMap = () => {
     return `${year}-${month}-${day}`;
   };
 
-  // Получить веху для проекта на конкретный месяц
-  const getMilestone = useCallback((project, date) => {
+  // Получить список вех для проекта на конкретный месяц
+  const getMilestones = useCallback((project, date) => {
     if (!project.milestones) return null;
     const yearMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    return project.milestones.find(m => {
+    return project.milestones.filter(m => {
       const mDate = new Date(m.month_date);
       const mYearMonth = `${mDate.getFullYear()}-${String(mDate.getMonth() + 1).padStart(2, '0')}`;
       return mYearMonth === yearMonth;
     });
   }, []);
+
+  const findMilestoneByType = useCallback((project, date, milestoneType) => {
+    const milestones = getMilestones(project, date) || [];
+    return milestones.find(m => m.milestone_type === milestoneType);
+  }, [getMilestones]);
+
+  const getCellAreaMilestone = useCallback((project, date) => {
+    const milestones = getMilestones(project, date) || [];
+    return milestones.find(m => m.area_value !== null && m.area_value !== undefined) || null;
+  }, [getMilestones]);
+
+  const getCellAreaValue = useCallback((project, date) => {
+    const carrier = getCellAreaMilestone(project, date);
+    return carrier ? carrier.area_value : null;
+  }, [getCellAreaMilestone]);
+
+  const getYearAreaTotal = useCallback((project, year) => {
+    if (!project) return 0;
+    return filteredMonths.reduce((sum, date) => {
+      if (date.getFullYear() !== year) return sum;
+      const area = getCellAreaValue(project, date);
+      return area ? sum + area : sum;
+    }, 0);
+  }, [filteredMonths, getCellAreaValue]);
 
   // Форматирование месяца
   const formatMonth = (date) => {
@@ -127,50 +166,86 @@ const StrategicMap = () => {
 
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
-    const milestone = getMilestone(project, date);
+    const milestonesForMonth = getMilestones(project, date) || [];
+    const primaryMilestone = milestonesForMonth[0] || null;
+    const cellAreaValue = getCellAreaValue(project, date);
 
     if (quickFillType) {
       // Режим быстрого заполнения
       setUpdatingCells(prev => new Set(prev).add(cellKey));
       try {
-        const newValue = milestone?.milestone_type === quickFillType ? null : (milestone?.value || '');
-        const newType = milestone?.milestone_type === quickFillType ? null : quickFillType;
-        const newAreaValue = milestone?.area_value || null;
-        
-        await client.put(
-          `/strategic-map/projects/${projectId}/milestone?month_date=${dateStr}`,
-          {
-            value: newValue,
-            milestone_type: newType,
-            area_value: newAreaValue,
-            is_key_milestone: ['РНС', 'Завершение'].includes(newType)
-          }
-        );
-        
-        // Оптимистичное обновление локального состояния
-        setProjects(prev => prev.map(p => {
-          if (p.id === projectId) {
-            const otherMilestones = (p.milestones || []).filter(m => {
-              const mDate = new Date(m.month_date);
-              return formatDateLocal(mDate) !== dateStr;
-            });
-            
-            if (newType) {
+        const existingMilestone = findMilestoneByType(project, date, quickFillType);
+        if (existingMilestone) {
+          const remainingMilestones = milestonesForMonth.filter(m => m.id !== existingMilestone.id);
+          const areaToPreserve = existingMilestone.area_value ?? null;
+
+          await client.delete(`/strategic-map/milestones/${existingMilestone.id}`);
+
+          if (areaToPreserve !== null) {
+            if (remainingMilestones.length > 0) {
+              const carrier = remainingMilestones[0];
+              await client.put(`/strategic-map/milestones/${carrier.id}`, { area_value: areaToPreserve });
+              setProjects(prev => prev.map(p => {
+                if (p.id !== projectId) return p;
+                return {
+                  ...p,
+                  milestones: (p.milestones || [])
+                    .filter(m => m.id !== existingMilestone.id)
+                    .map(m => (m.id === carrier.id ? { ...m, area_value: areaToPreserve } : { ...m, area_value: m.area_value ?? null }))
+                };
+              }));
+            } else {
+              const createdArea = await client.post(
+                `/strategic-map/projects/${projectId}/milestones`,
+                {
+                  month_date: dateStr,
+                  milestone_type: null,
+                  value: null,
+                  area_value: areaToPreserve,
+                  is_key_milestone: false
+                }
+              );
+              const newAreaMilestone = createdArea.data;
+              setProjects(prev => prev.map(p => {
+                if (p.id !== projectId) return p;
+                return {
+                  ...p,
+                  milestones: [
+                    ...(p.milestones || []).filter(m => m.id !== existingMilestone.id),
+                    newAreaMilestone
+                  ]
+                };
+              }));
+            }
+          } else {
+            setProjects(prev => prev.map(p => {
+              if (p.id !== projectId) return p;
               return {
                 ...p,
-                milestones: [...otherMilestones, {
-                  month_date: dateStr,
-                  milestone_type: newType,
-                  value: newValue,
-                  area_value: newAreaValue,
-                  is_key_milestone: ['РНС', 'Завершение'].includes(newType)
-                }]
+                milestones: (p.milestones || []).filter(m => m.id !== existingMilestone.id)
               };
-            }
-            return { ...p, milestones: otherMilestones };
+            }));
           }
-          return p;
-        }));
+        } else {
+          const created = await client.post(
+            `/strategic-map/projects/${projectId}/milestones`,
+            {
+              month_date: dateStr,
+              milestone_type: quickFillType,
+              value: null,
+              area_value: null,
+              is_key_milestone: ['РНС', 'Завершение'].includes(quickFillType)
+            }
+          );
+          const newMilestone = created.data;
+          setProjects(prev => prev.map(p => {
+            if (p.id !== projectId) return p;
+            return {
+              ...p,
+              milestones: [...(p.milestones || []), newMilestone]
+            };
+          }));
+        }
       } catch (e) {
         console.error(e);
         showError('Ошибка при обновлении');
@@ -186,9 +261,9 @@ const StrategicMap = () => {
     }
 
     setEditingCell({ projectId, date: dateStr, displayDate: date });
-    setEditValue(milestone?.value || '');
-    setSelectedMilestoneType(milestone?.milestone_type || '');
-    setEditAreaValue(milestone?.area_value || '');
+    setEditValue(primaryMilestone?.value || '');
+    setSelectedMilestoneType(primaryMilestone?.milestone_type || '');
+    setEditAreaValue(cellAreaValue ?? '');
   };
 
   // Закрытие модального окна редактирования
@@ -199,20 +274,97 @@ const StrategicMap = () => {
     setSelectedMilestoneType('');
   };
 
+  const closeAreaEdit = () => {
+    setEditingAreaCell(null);
+    setAreaEditValue('');
+  };
+
   // Сохранение редактирования ячейки
   const saveCellEdit = async () => {
     if (!editingCell) return;
     
     try {
-      await client.put(
-        `/strategic-map/projects/${editingCell.projectId}/milestone?month_date=${editingCell.date}`,
-        {
-          value: editValue || null,
-          milestone_type: selectedMilestoneType || null,
-          area_value: editAreaValue ? parseFloat(editAreaValue) : null,
-          is_key_milestone: ['РНС', 'Завершение'].includes(selectedMilestoneType)
+      const project = projects.find(p => p.id === editingCell.projectId);
+      const displayDate = editingCell.displayDate || new Date(editingCell.date);
+      const monthMilestones = getMilestones(project, displayDate) || [];
+      const rawArea = (editAreaValue ?? '').toString();
+      const trimmedArea = rawArea.trim();
+      const parsedAreaValue = trimmedArea === '' ? null : parseFloat(trimmedArea);
+      if (parsedAreaValue !== null && Number.isNaN(parsedAreaValue)) {
+        showError('Неверный формат числа');
+        return;
+      }
+      const areaCarrier = monthMilestones.find(m => m.area_value !== null && m.area_value !== undefined) || null;
+
+      if (!selectedMilestoneType) {
+        if (parsedAreaValue === null) {
+          // Если тип не выбран и площадь пустая — очищаем все вехи в этой ячейке
+          await Promise.all(monthMilestones.map(m => client.delete(`/strategic-map/milestones/${m.id}`)));
+        } else {
+          // Тип не выбран, но площадь задана — сохраняем площадь на уровне ячейки
+          let carrier = areaCarrier;
+          if (!carrier && monthMilestones.length > 0) {
+            carrier = monthMilestones[0];
+          }
+          if (carrier) {
+            await client.put(`/strategic-map/milestones/${carrier.id}`, { area_value: parsedAreaValue });
+          } else {
+            await client.post(
+              `/strategic-map/projects/${editingCell.projectId}/milestones`,
+              {
+                month_date: editingCell.date,
+                milestone_type: null,
+                value: null,
+                area_value: parsedAreaValue,
+                is_key_milestone: false
+              }
+            );
+          }
+          const toClear = monthMilestones.filter(m => carrier && m.id !== carrier.id && m.area_value !== null && m.area_value !== undefined);
+          if (toClear.length > 0) {
+            await Promise.all(toClear.map(m => client.put(`/strategic-map/milestones/${m.id}`, { area_value: null })));
+          }
         }
-      );
+      } else {
+        let selectedMilestone = monthMilestones.find(m => m.milestone_type === selectedMilestoneType);
+        if (selectedMilestone) {
+          await client.put(
+            `/strategic-map/milestones/${selectedMilestone.id}`,
+            {
+              value: editValue || null,
+              milestone_type: selectedMilestoneType,
+              is_key_milestone: ['РНС', 'Завершение'].includes(selectedMilestoneType)
+            }
+          );
+        } else {
+          const created = await client.post(
+            `/strategic-map/projects/${editingCell.projectId}/milestones`,
+            {
+              month_date: editingCell.date,
+              milestone_type: selectedMilestoneType,
+              value: editValue || null,
+              area_value: null,
+              is_key_milestone: ['РНС', 'Завершение'].includes(selectedMilestoneType)
+            }
+          );
+          selectedMilestone = created.data;
+        }
+
+        if (parsedAreaValue === null) {
+          if (areaCarrier) {
+            await client.put(`/strategic-map/milestones/${areaCarrier.id}`, { area_value: null });
+          }
+        } else {
+          const carrier = areaCarrier || selectedMilestone;
+          if (carrier) {
+            await client.put(`/strategic-map/milestones/${carrier.id}`, { area_value: parsedAreaValue });
+            const toClear = monthMilestones.filter(m => m.id !== carrier.id && m.area_value !== null && m.area_value !== undefined);
+            if (toClear.length > 0) {
+              await Promise.all(toClear.map(m => client.put(`/strategic-map/milestones/${m.id}`, { area_value: null })));
+            }
+          }
+        }
+      }
       await fetchData();
       showSuccess('Сохранено');
     } catch (e) {
@@ -220,6 +372,105 @@ const StrategicMap = () => {
       showError('Ошибка сохранения');
     }
     closeEditModal();
+  };
+
+  const saveAreaOnlyEdit = async () => {
+    if (!editingAreaCell) return;
+
+    const rawArea = (areaEditValue ?? '').toString();
+    const trimmedArea = rawArea.trim();
+    const parsedAreaValue = trimmedArea === '' ? null : parseFloat(trimmedArea);
+    if (parsedAreaValue !== null && Number.isNaN(parsedAreaValue)) {
+      showError('Неверный формат числа');
+      return;
+    }
+
+    try {
+      const project = projects.find(p => p.id === editingAreaCell.projectId);
+      const displayDate = editingAreaCell.displayDate || new Date(editingAreaCell.date);
+      const monthMilestones = getMilestones(project, displayDate) || [];
+      const areaCarrier = monthMilestones.find(m => m.area_value !== null && m.area_value !== undefined) || null;
+
+      if (parsedAreaValue === null) {
+        if (areaCarrier) {
+          await client.put(`/strategic-map/milestones/${areaCarrier.id}`, { area_value: null });
+        }
+      } else {
+        let carrier = areaCarrier;
+        if (!carrier && monthMilestones.length > 0) {
+          carrier = monthMilestones[0];
+        }
+        if (carrier) {
+          await client.put(`/strategic-map/milestones/${carrier.id}`, { area_value: parsedAreaValue });
+        } else {
+          await client.post(
+            `/strategic-map/projects/${editingAreaCell.projectId}/milestones`,
+            {
+              month_date: editingAreaCell.date,
+              milestone_type: null,
+              value: null,
+              area_value: parsedAreaValue,
+              is_key_milestone: false
+            }
+          );
+        }
+        const toClear = monthMilestones.filter(m => carrier && m.id !== carrier.id && m.area_value !== null && m.area_value !== undefined);
+        if (toClear.length > 0) {
+          await Promise.all(toClear.map(m => client.put(`/strategic-map/milestones/${m.id}`, { area_value: null })));
+        }
+      }
+
+      await fetchData();
+      showSuccess('Сохранено');
+    } catch (e) {
+      console.error(e);
+      showError('Ошибка сохранения');
+    }
+
+    closeAreaEdit();
+  };
+
+  const deleteLegendMilestone = async (project, date, milestone) => {
+    if (!milestone?.id) return;
+    const dateStr = formatDateLocal(date);
+    const cellKey = `${project.id}-${dateStr}`;
+    if (updatingCells.has(cellKey)) return;
+
+    setUpdatingCells(prev => new Set(prev).add(cellKey));
+    try {
+      const allMilestones = getMilestones(project, date) || [];
+      const remaining = allMilestones.filter(x => x.id !== milestone.id);
+      const areaToPreserve = milestone.area_value ?? null;
+
+      await client.delete(`/strategic-map/milestones/${milestone.id}`);
+      if (areaToPreserve !== null) {
+        if (remaining.length > 0) {
+          const carrier = remaining[0];
+          await client.put(`/strategic-map/milestones/${carrier.id}`, { area_value: areaToPreserve });
+        } else {
+          await client.post(
+            `/strategic-map/projects/${project.id}/milestones`,
+            {
+              month_date: dateStr,
+              milestone_type: null,
+              value: null,
+              area_value: areaToPreserve,
+              is_key_milestone: false
+            }
+          );
+        }
+      }
+      await fetchData();
+    } catch (e) {
+      console.error(e);
+      showError('Ошибка удаления');
+    } finally {
+      setUpdatingCells(prev => {
+        const next = new Set(prev);
+        next.delete(cellKey);
+        return next;
+      });
+    }
   };
 
 
@@ -269,9 +520,83 @@ const StrategicMap = () => {
   // Получить уникальные годы для фильтра
   const availableYears = useMemo(() => {
     const years = new Set();
-    for (let y = 2022; y <= 2028; y++) years.add(y);
+    for (let y = startYear; y <= endYear; y++) years.add(y);
     return Array.from(years);
-  }, []);
+  }, [startYear, endYear]);
+
+  // Добавить год в начало
+  const addYearBefore = () => {
+    setStartYear(prev => {
+      const next = prev - 1;
+      setYearRangeLimits(limit => ({ ...limit, min: Math.min(limit.min, next) }));
+      return next;
+    });
+  };
+
+  // Добавить год в конец
+  const addYearAfter = () => {
+    setEndYear(prev => {
+      const next = prev + 1;
+      setYearRangeLimits(limit => ({ ...limit, max: Math.max(limit.max, next) }));
+      return next;
+    });
+  };
+
+  const updateProjectField = async (projectId, field, value) => {
+    const fieldKey = `${projectId}-${field}`;
+    if (updatingProjectFields.has(fieldKey)) return;
+
+    setUpdatingProjectFields(prev => new Set(prev).add(fieldKey));
+    setProjects(prev => prev.map(p => (p.id === projectId ? { ...p, [field]: value } : p)));
+
+    try {
+      await client.put(`/strategic-map/projects/${projectId}`, { [field]: value });
+    } catch (e) {
+      console.error(e);
+      showError('Ошибка сохранения');
+      fetchData();
+    } finally {
+      setUpdatingProjectFields(prev => {
+        const next = new Set(prev);
+        next.delete(fieldKey);
+        return next;
+      });
+    }
+  };
+
+  const getFieldKey = (projectId, field) => `${projectId}-${field}`;
+
+  const setFieldEditValue = (projectId, field, value) => {
+    const key = getFieldKey(projectId, field);
+    setProjectFieldEdits(prev => ({ ...prev, [key]: value }));
+  };
+
+  const clearFieldEditValue = (projectId, field) => {
+    const key = getFieldKey(projectId, field);
+    setProjectFieldEdits(prev => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const getDisplayValue = (value) => (value === null || value === undefined ? '' : String(value));
+
+  const commitNumericField = (projectId, field, rawValue, parser = 'int') => {
+    const trimmed = rawValue.trim();
+    const parsed = trimmed === '' ? null : (parser === 'float' ? parseFloat(trimmed) : parseInt(trimmed, 10));
+    if (parsed !== null && Number.isNaN(parsed)) {
+      showError('Неверный формат числа');
+      return;
+    }
+    updateProjectField(projectId, field, parsed);
+  };
+
+  const commitTextField = (projectId, field, rawValue) => {
+    const trimmed = rawValue.trim();
+    updateProjectField(projectId, field, trimmed === '' ? null : trimmed);
+  };
 
   // Стили
   const containerStyle = {
@@ -312,6 +637,84 @@ const StrategicMap = () => {
     backdropFilter: 'blur(8px)'
   };
 
+  const yearRangeStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    background: isDark ? 'rgba(51, 65, 85, 0.5)' : 'rgba(226, 232, 240, 0.5)',
+    borderRadius: 10,
+    padding: '8px 10px'
+  };
+
+  const rangeTrackStyle = {
+    position: 'relative',
+    minWidth: 240,
+    height: 28,
+    display: 'flex',
+    alignItems: 'center'
+  };
+
+  const rangeInputStyle = {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    width: '100%',
+    margin: 0,
+    pointerEvents: 'none',
+    appearance: 'none',
+    background: 'transparent'
+  };
+
+  const rangeThumbStyle = {
+    pointerEvents: 'auto'
+  };
+
+  const rangeTrackBaseStyle = {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 6,
+    borderRadius: 999,
+    background: isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.4)'
+  };
+
+  const rangeTrackActiveStyle = (start, end) => {
+    const span = yearRangeLimits.max - yearRangeLimits.min || 1;
+    const left = ((start - yearRangeLimits.min) / span) * 100;
+    const right = ((end - yearRangeLimits.min) / span) * 100;
+    return {
+      position: 'absolute',
+      height: 6,
+      borderRadius: 999,
+      left: `${left}%`,
+      width: `${Math.max(0, right - left)}%`,
+      background: isDark ? 'rgba(59, 130, 246, 0.7)' : 'rgba(37, 99, 235, 0.7)'
+    };
+  };
+
+  const yearStepButtonStyle = {
+    border: 'none',
+    background: isDark ? 'rgba(30, 41, 59, 0.8)' : '#fff',
+    color: 'var(--text-primary)',
+    borderRadius: 8,
+    padding: '4px 8px',
+    cursor: 'pointer',
+    fontSize: 12,
+    fontWeight: 600
+  };
+
+  const inlineInputStyle = {
+    width: '100%',
+    height: 30,
+    borderRadius: 6,
+    border: `1px solid ${isDark ? 'rgba(71, 85, 105, 0.6)' : 'rgba(203, 213, 225, 0.9)'}`,
+    background: isDark ? 'rgba(15, 23, 42, 0.6)' : '#fff',
+    color: 'var(--text-primary)',
+    padding: '4px 6px',
+    fontSize: 11,
+    textAlign: 'center'
+  };
+
   const tableContainerStyle = {
     overflow: 'auto',
     background: isDark ? 'rgba(15, 23, 42, 0.6)' : 'rgba(255, 255, 255, 0.95)',
@@ -322,20 +725,55 @@ const StrategicMap = () => {
       : '0 4px 24px rgba(0, 0, 0, 0.08)',
   };
 
-  const cellStyle = (isHeader = false, isFixed = false, fixedLeft = 0, isFixedVertical = false) => {
+  const fixedColumnWidths = {
+    index: 40,
+    project: 160,
+    status: 80,
+    sections: 70,
+    area: 100,
+    duration: 80
+  };
+
+  const headerRowHeights = {
+    top: 48,
+    top2: 44,
+    top3: 36
+  };
+
+  const fixedColumnOffsets = {
+    index: 0,
+    project: fixedColumnWidths.index,
+    status: fixedColumnWidths.index + fixedColumnWidths.project,
+    sections: fixedColumnWidths.index + fixedColumnWidths.project + fixedColumnWidths.status,
+    area: fixedColumnWidths.index + fixedColumnWidths.project + fixedColumnWidths.status + fixedColumnWidths.sections,
+    duration: fixedColumnWidths.index + fixedColumnWidths.project + fixedColumnWidths.status + fixedColumnWidths.sections + fixedColumnWidths.area
+  };
+
+  const cellStyle = (isHeader = false, isFixed = false, fixedLeft = 0, isFixedVertical = false, fixedWidth = null) => {
     let topValue = 'auto';
+    let minHeight = undefined;
     if (isFixedVertical && isHeader) {
-      if (isFixedVertical === 'top2') topValue = 38;
-      else if (isFixedVertical === 'top3') topValue = 76;
-      else topValue = 0;
+      if (isFixedVertical === 'top2') {
+        topValue = headerRowHeights.top;
+        minHeight = headerRowHeights.top2;
+      } else if (isFixedVertical === 'top3') {
+        topValue = headerRowHeights.top + headerRowHeights.top2;
+        minHeight = headerRowHeights.top3;
+      } else {
+        topValue = 0;
+        minHeight = headerRowHeights.top;
+      }
     }
     
     return {
-      padding: isHeader ? '10px 8px' : '6px 4px',
+      padding: isHeader ? '10px 8px' : '8px 6px',
       fontSize: isHeader ? 11 : 12,
       fontWeight: isHeader ? 600 : 400,
       textAlign: 'center',
-      whiteSpace: 'nowrap',
+      whiteSpace: isHeader ? 'normal' : 'nowrap',
+      wordBreak: isHeader ? 'break-word' : 'normal',
+      lineHeight: isHeader ? 1.2 : 'normal',
+      verticalAlign: 'middle',
       borderRight: `1px solid ${isDark ? 'rgba(71, 85, 105, 0.3)' : 'rgba(226, 232, 240, 0.8)'}`,
       borderBottom: `1px solid ${isDark ? 'rgba(71, 85, 105, 0.3)' : 'rgba(226, 232, 240, 0.8)'}`,
       background: isFixed || isFixedVertical
@@ -345,10 +783,21 @@ const StrategicMap = () => {
       left: isFixed ? fixedLeft : 'auto',
       top: topValue,
       zIndex: isFixed && isFixedVertical ? 30 : (isFixed ? 20 : (isFixedVertical ? 10 : 1)),
-      minWidth: isFixed ? (fixedLeft === 0 ? 50 : (fixedLeft === 50 ? 200 : 100)) : 50,
-      maxWidth: isFixed ? (fixedLeft === 0 ? 60 : (fixedLeft === 50 ? 250 : 200)) : 60,
+      minWidth: isFixed ? fixedWidth : 100,
+      maxWidth: isFixed ? fixedWidth : 120,
+      ...(minHeight ? { minHeight } : {}),
     };
   };
+
+  const yearTotalColumnStyle = (isHeader = false, isFixedVertical = false) => ({
+    ...cellStyle(isHeader, false, 0, isFixedVertical),
+    minWidth: 80,
+    maxWidth: 100,
+    background: isDark
+      ? 'rgba(30, 41, 59, 0.7)'
+      : 'rgba(226, 232, 240, 0.7)',
+    fontWeight: isHeader ? 700 : 600
+  });
 
   const getMilestoneCellStyle = (milestone) => {
     if (!milestone || !milestone.value) return {};
@@ -408,33 +857,6 @@ const StrategicMap = () => {
           ))}
         </select>
 
-        <div style={{ display: 'flex', gap: 4, background: isDark ? 'rgba(51, 65, 85, 0.5)' : 'rgba(226, 232, 240, 0.5)', borderRadius: 8, padding: 4 }}>
-          <button
-            onClick={() => setViewMode('timeline')}
-            className={`btn btn-sm ${viewMode === 'timeline' ? 'btn-primary' : ''}`}
-            style={{ 
-              background: viewMode === 'timeline' ? undefined : 'transparent',
-              border: 'none',
-              padding: '6px 12px'
-            }}
-          >
-            📅 Таймлайн
-          </button>
-          <button
-            onClick={() => setViewMode('table')}
-            className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : ''}`}
-            style={{ 
-              background: viewMode === 'table' ? undefined : 'transparent',
-              border: 'none',
-              padding: '6px 12px'
-            }}
-          >
-            📊 Таблица
-          </button>
-        </div>
-
-        <div style={{ height: 24, width: 1, background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', margin: '0 4px' }} />
-
         {/* Быстрое заполнение */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>Быстрый ввод:</span>
@@ -482,6 +904,55 @@ const StrategicMap = () => {
         </div>
 
         <div style={{ flex: 1 }} />
+
+        {/* Управление годами */}
+        <div style={yearRangeStyle}>
+          <button
+            onClick={addYearBefore}
+            style={yearStepButtonStyle}
+            title="Добавить год слева"
+          >
+            − год
+          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textAlign: 'center' }}>
+              {startYear} — {endYear}
+            </div>
+            <div style={rangeTrackStyle}>
+              <div style={rangeTrackBaseStyle} />
+              <div style={rangeTrackActiveStyle(startYear, endYear)} />
+              <input
+                type="range"
+                min={yearRangeLimits.min}
+                max={yearRangeLimits.max}
+                value={startYear}
+                onChange={(e) => {
+                  const next = Math.min(parseInt(e.target.value, 10), endYear);
+                  setStartYear(next);
+                }}
+                style={{ ...rangeInputStyle, ...rangeThumbStyle }}
+              />
+              <input
+                type="range"
+                min={yearRangeLimits.min}
+                max={yearRangeLimits.max}
+                value={endYear}
+                onChange={(e) => {
+                  const next = Math.max(parseInt(e.target.value, 10), startYear);
+                  setEndYear(next);
+                }}
+                style={{ ...rangeInputStyle, ...rangeThumbStyle }}
+              />
+            </div>
+          </div>
+          <button
+            onClick={addYearAfter}
+            style={yearStepButtonStyle}
+            title="Добавить год справа"
+          >
+            + год
+          </button>
+        </div>
       </div>
 
       {/* Легенда типов вех */}
@@ -510,81 +981,98 @@ const StrategicMap = () => {
       </div>
 
       {/* Main Table */}
-      <div style={{ ...tableContainerStyle, maxHeight: 'calc(100vh - 350px)' }} ref={tableRef}>
-        <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%' }}>
+      <div style={{ ...tableContainerStyle, maxHeight: '350px' }} ref={tableRef}>
+        <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', height: '200px', display: 'flex', flexWrap: 'wrap', tableLayout: 'fixed' }}>
           <thead>
             {/* Кварталы */}
             <tr>
               <th style={{ 
-                ...cellStyle(true, true, 0, 'top'), 
-                minWidth: 50,
+                ...cellStyle(true, true, fixedColumnOffsets.index, 'top', fixedColumnWidths.index),
+                minHeight: headerRowHeights.top
               }}>
                 №
               </th>
               <th style={{ 
-                ...cellStyle(true, true, 50, 'top'), 
-                minWidth: 200,
+                ...cellStyle(true, true, fixedColumnOffsets.project, 'top', fixedColumnWidths.project),
+                minHeight: headerRowHeights.top
               }}>
                 Проект
               </th>
-              <th style={{ ...cellStyle(true, true, 250, 'top'), minWidth: 120 }}>Текущий статус</th>
-              <th style={{ ...cellStyle(true, true, 370, 'top'), minWidth: 100 }}>Кол-во секций</th>
-              <th style={{ ...cellStyle(true, true, 470, 'top'), minWidth: 150 }}>Продаваемая площадь (М2)</th>
-              <th style={{ ...cellStyle(true, true, 620, 'top'), minWidth: 120 }}>Срок реализации (мес)</th>
-              {Object.entries(quarters).map(([quarter, monthsInQuarter]) => (
-                <th 
-                  key={quarter} 
-                  colSpan={monthsInQuarter.length}
-                  style={{ 
-                    ...cellStyle(true, false, 0, 'top'),
-                    background: isDark ? 'rgba(51, 65, 85, 0.95)' : 'rgba(226, 232, 240, 0.98)',
-                    fontSize: 11,
-                    fontWeight: 700,
-                  }}
-                >
-                  {quarter}
-                </th>
-              ))}
-              <th style={{ ...cellStyle(true, false, 0, 'top'), minWidth: 40 }}>⚡</th>
+              <th style={{ ...cellStyle(true, true, fixedColumnOffsets.status, 'top', fixedColumnWidths.status), minHeight: headerRowHeights.top }}>Текущий статус</th>
+              <th style={{ ...cellStyle(true, true, fixedColumnOffsets.sections, 'top', fixedColumnWidths.sections), minHeight: headerRowHeights.top }}>Кол-во секций</th>
+              <th style={{ ...cellStyle(true, true, fixedColumnOffsets.area, 'top', fixedColumnWidths.area), minHeight: headerRowHeights.top }}>Продаваемая площадь (М2)</th>
+              <th style={{ ...cellStyle(true, true, fixedColumnOffsets.duration, 'top', fixedColumnWidths.duration), minHeight: headerRowHeights.top }}>Срок реализации (мес)</th>
+              {Object.entries(quarters).map(([quarter, monthsInQuarter]) => {
+                const quarterYear = monthsInQuarter[0]?.getFullYear();
+                const quarterIndex = Math.floor(monthsInQuarter[0]?.getMonth() / 3) + 1;
+                return (
+                  <React.Fragment key={quarter}>
+                    <th 
+                      colSpan={monthsInQuarter.length}
+                      style={{ 
+                        ...cellStyle(true, false, 0, 'top'),
+                        background: isDark ? 'rgba(51, 65, 85, 0.95)' : 'rgba(226, 232, 240, 0.98)',
+                        fontSize: 22,
+                        fontWeight: 700,
+                      }}
+                    >
+                      {quarter}
+                    </th>
+                    {quarterIndex === 4 && (
+                      <th style={{ ...yearTotalColumnStyle(true, 'top') }}>
+                        Итого {quarterYear}
+                      </th>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </tr>
             
             {/* Месяцы - первая строка (статусы) */}
             <tr>
               <th style={{ 
-                ...cellStyle(true, true, 0, 'top2'),
+                ...cellStyle(true, true, fixedColumnOffsets.index, 'top2', fixedColumnWidths.index),
                 fontSize: 9,
                 color: 'var(--text-muted)'
               }}>
                 №
               </th>
               <th style={{ 
-                ...cellStyle(true, true, 50, 'top2'),
+                ...cellStyle(true, true, fixedColumnOffsets.project, 'top2', fixedColumnWidths.project),
                 fontSize: 9,
                 color: 'var(--text-muted)'
               }}>
                 название объекта
               </th>
-              <th style={{ ...cellStyle(true, true, 250, 'top2'), fontSize: 9 }}>статус</th>
-              <th style={{ ...cellStyle(true, true, 370, 'top2'), fontSize: 9 }}>секций</th>
-              <th style={{ ...cellStyle(true, true, 470, 'top2'), fontSize: 9 }}>площадь м²</th>
-              <th style={{ ...cellStyle(true, true, 620, 'top2'), fontSize: 9 }}>срок мес.</th>
+              <th style={{ ...cellStyle(true, true, fixedColumnOffsets.status, 'top2', fixedColumnWidths.status), fontSize: 9 }}>статус</th>
+              <th style={{ ...cellStyle(true, true, fixedColumnOffsets.sections, 'top2', fixedColumnWidths.sections), fontSize: 9 }}>секций</th>
+              <th style={{ ...cellStyle(true, true, fixedColumnOffsets.area, 'top2', fixedColumnWidths.area), fontSize: 9 }}>площадь м²</th>
+              <th style={{ ...cellStyle(true, true, fixedColumnOffsets.duration, 'top2', fixedColumnWidths.duration), fontSize: 9 }}>срок мес.</th>
               {filteredMonths.map((date, idx) => (
-                <th 
-                  key={idx} 
-                  style={{ 
-                    ...cellStyle(true, false, 0, 'top2'),
-                    fontSize: 8,
-                    padding: '2px',
-                    color: date.getMonth() === 0 ? 'var(--text-primary)' : 'var(--text-muted)',
-                    fontWeight: date.getMonth() === 0 ? 700 : 400,
-                    background: date.getMonth() === 0 
-                      ? (isDark ? 'rgba(59, 130, 246, 0.25)' : 'rgba(59, 130, 246, 0.2)')
-                      : (isDark ? '#1e293b' : '#f8fafc')
-                  }}
-                >
-                  {formatMonth(date)}
-                  {date.getMonth() === 0 && <div style={{ fontSize: 7 }}>{date.getFullYear()}</div>}
-                </th>
+                <React.Fragment key={idx}>
+                  <th 
+                    style={{ 
+                      ...cellStyle(true, false, 0, 'top2'),
+                      fontSize: 10,
+                      padding: '4px 2px',
+                      minHeight: headerRowHeights.top2,
+                      lineHeight: 1.2,
+                      color: date.getMonth() === 0 ? 'var(--text-primary)' : 'var(--text-muted)',
+                      fontWeight: date.getMonth() === 0 ? 700 : 400,
+                      background: date.getMonth() === 0 
+                        ? (isDark ? 'rgba(59, 130, 246, 0.25)' : 'rgba(59, 130, 246, 0.2)')
+                        : (isDark ? '#1e293b' : '#f8fafc')
+                    }}
+                  >
+                    {formatMonth(date)}
+                    {date.getMonth() === 0 && <div style={{ fontSize: 8, lineHeight: 1.2 }}>{date.getFullYear()}</div>}
+                  </th>
+                  {date.getMonth() === 11 && (
+                    <th style={{ ...yearTotalColumnStyle(true, 'top2') }}>
+                      итого
+                    </th>
+                  )}
+                </React.Fragment>
               ))}
               <th style={{ ...cellStyle(true, false, 0, 'top2') }}></th>
             </tr>
@@ -592,40 +1080,48 @@ const StrategicMap = () => {
             {/* Месяцы - вторая строка (м2) */}
             <tr>
               <th style={{ 
-                ...cellStyle(true, true, 0, 'top3'),
+                ...cellStyle(true, true, fixedColumnOffsets.index, 'top3', fixedColumnWidths.index),
                 fontSize: 9,
                 color: 'var(--text-muted)',
                 borderTop: 'none'
               }}>
               </th>
               <th style={{ 
-                ...cellStyle(true, true, 50, 'top3'),
+                ...cellStyle(true, true, fixedColumnOffsets.project, 'top3', fixedColumnWidths.project),
                 fontSize: 9,
                 color: 'var(--text-muted)',
                 borderTop: 'none'
               }}>
               </th>
-              <th style={{ ...cellStyle(true, true, 250, 'top3'), fontSize: 9, borderTop: 'none' }}></th>
-              <th style={{ ...cellStyle(true, true, 370, 'top3'), fontSize: 9, borderTop: 'none' }}></th>
-              <th style={{ ...cellStyle(true, true, 470, 'top3'), fontSize: 9, borderTop: 'none' }}></th>
-              <th style={{ ...cellStyle(true, true, 620, 'top3'), fontSize: 9, borderTop: 'none' }}></th>
+              <th style={{ ...cellStyle(true, true, fixedColumnOffsets.status, 'top3', fixedColumnWidths.status), fontSize: 9, borderTop: 'none' }}></th>
+              <th style={{ ...cellStyle(true, true, fixedColumnOffsets.sections, 'top3', fixedColumnWidths.sections), fontSize: 9, borderTop: 'none' }}></th>
+              <th style={{ ...cellStyle(true, true, fixedColumnOffsets.area, 'top3', fixedColumnWidths.area), fontSize: 9, borderTop: 'none' }}></th>
+              <th style={{ ...cellStyle(true, true, fixedColumnOffsets.duration, 'top3', fixedColumnWidths.duration), fontSize: 9, borderTop: 'none' }}></th>
               {filteredMonths.map((date, idx) => (
-                <th 
-                  key={idx} 
-                  style={{ 
-                    ...cellStyle(true, false, 0, 'top3'),
-                    fontSize: 8,
-                    padding: '2px',
-                    color: 'var(--text-muted)',
-                    fontWeight: 400,
-                    background: date.getMonth() === 0 
-                      ? (isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)')
-                      : (isDark ? '#1e293b' : '#f8fafc'),
-                    borderTop: 'none'
-                  }}
-                >
-                  м²
-                </th>
+                <React.Fragment key={idx}>
+                  <th 
+                    style={{ 
+                      ...cellStyle(true, false, 0, 'top3'),
+                      fontSize: 10,
+                      padding: '4px 2px',
+                      minHeight: headerRowHeights.top3,
+                      lineHeight: 1.2,
+                      color: 'var(--text-muted)',
+                      fontWeight: 400,
+                      background: date.getMonth() === 0 
+                        ? (isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)')
+                        : (isDark ? '#1e293b' : '#f8fafc'),
+                      borderTop: 'none'
+                    }}
+                  >
+                    м²
+                  </th>
+                  {date.getMonth() === 11 && (
+                    <th style={{ ...yearTotalColumnStyle(true, 'top3'), borderTop: 'none' }}>
+                      м²
+                    </th>
+                  )}
+                </React.Fragment>
               ))}
               <th style={{ ...cellStyle(true, false, 0, 'top3'), borderTop: 'none' }}></th>
             </tr>
@@ -634,7 +1130,7 @@ const StrategicMap = () => {
           <tbody>
             {filteredProjects.length === 0 ? (
               <tr>
-                <td colSpan={6 + filteredMonths.length + 1} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+                <td colSpan={6 + filteredMonths.length + yearsInView.length + 1} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
                   {searchText ? 'Проекты не найдены' : 'Проекты автоматически загружаются из объектов строительства...'}
                 </td>
               </tr>
@@ -657,7 +1153,7 @@ const StrategicMap = () => {
                 >
                   {/* № */}
                   <td style={{ 
-                    ...cellStyle(false, true, 0),
+                    ...cellStyle(false, true, fixedColumnOffsets.index, false, fixedColumnWidths.index),
                     fontSize: 11,
                     fontWeight: project.is_subtotal || project.is_total ? 700 : 400
                   }}>
@@ -666,9 +1162,9 @@ const StrategicMap = () => {
                   
                   {/* Название проекта */}
                   <td style={{ 
-                    ...cellStyle(false, true, 50),
+                    ...cellStyle(false, true, fixedColumnOffsets.project, false, fixedColumnWidths.project),
                     textAlign: 'left',
-                    paddingLeft: project.name.startsWith('  ') ? 24 : 12,
+                    paddingLeft: project.name.startsWith('  ') ? 8 : 4,
                     fontWeight: project.is_subtotal || project.is_total ? 700 : 500,
                     fontSize: project.is_subtotal ? 14 : 13,
                     color: project.is_subtotal 
@@ -693,178 +1189,316 @@ const StrategicMap = () => {
                   </td>
                   
                   {/* Текущий статус */}
-                  <td style={{ ...cellStyle(false, true, 250), fontSize: 11 }}>
-                    {project.current_status || '—'}
+                  <td style={{ ...cellStyle(false, true, fixedColumnOffsets.status, false, fixedColumnWidths.status), fontSize: 11 }}>
+                    {project.is_subtotal || project.is_total ? (
+                      project.current_status || '—'
+                    ) : (
+                      <input
+                        type="text"
+                        value={projectFieldEdits[getFieldKey(project.id, 'current_status')] ?? getDisplayValue(project.current_status)}
+                        onChange={(e) => setFieldEditValue(project.id, 'current_status', e.target.value)}
+                        onBlur={(e) => {
+                          commitTextField(project.id, 'current_status', e.target.value);
+                          clearFieldEditValue(project.id, 'current_status');
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') e.currentTarget.blur();
+                          if (e.key === 'Escape') {
+                            clearFieldEditValue(project.id, 'current_status');
+                            e.currentTarget.blur();
+                          }
+                        }}
+                        style={inlineInputStyle}
+                      />
+                    )}
                   </td>
                   
                   {/* Кол-во секций */}
-                  <td style={{ ...cellStyle(false, true, 370), fontSize: 11 }}>
-                    {project.sections_count || '—'}
+                  <td style={{ ...cellStyle(false, true, fixedColumnOffsets.sections, false, fixedColumnWidths.sections), fontSize: 11 }}>
+                    {project.is_subtotal || project.is_total ? (
+                      project.sections_count ?? '—'
+                    ) : (
+                      <input
+                        type="number"
+                        value={projectFieldEdits[getFieldKey(project.id, 'sections_count')] ?? getDisplayValue(project.sections_count)}
+                        onChange={(e) => setFieldEditValue(project.id, 'sections_count', e.target.value)}
+                        onBlur={(e) => {
+                          commitNumericField(project.id, 'sections_count', e.target.value, 'int');
+                          clearFieldEditValue(project.id, 'sections_count');
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') e.currentTarget.blur();
+                          if (e.key === 'Escape') {
+                            clearFieldEditValue(project.id, 'sections_count');
+                            e.currentTarget.blur();
+                          }
+                        }}
+                        style={inlineInputStyle}
+                      />
+                    )}
                   </td>
                   
                   {/* Продаваемая площадь (М2) */}
-                  <td style={{ ...cellStyle(false, true, 470), fontSize: 11 }}>
-                    {project.sellable_area ? project.sellable_area.toLocaleString('ru-RU') : '—'}
+                  <td style={{ ...cellStyle(false, true, fixedColumnOffsets.area, false, fixedColumnWidths.area), fontSize: 11 }}>
+                    {project.is_subtotal || project.is_total ? (
+                      project.sellable_area != null ? project.sellable_area.toLocaleString('ru-RU') : '—'
+                    ) : (
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={projectFieldEdits[getFieldKey(project.id, 'sellable_area')] ?? getDisplayValue(project.sellable_area)}
+                        onChange={(e) => setFieldEditValue(project.id, 'sellable_area', e.target.value)}
+                        onBlur={(e) => {
+                          commitNumericField(project.id, 'sellable_area', e.target.value, 'float');
+                          clearFieldEditValue(project.id, 'sellable_area');
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') e.currentTarget.blur();
+                          if (e.key === 'Escape') {
+                            clearFieldEditValue(project.id, 'sellable_area');
+                            e.currentTarget.blur();
+                          }
+                        }}
+                        style={inlineInputStyle}
+                      />
+                    )}
                   </td>
                   
                   {/* Срок реализации (мес) */}
-                  <td style={{ ...cellStyle(false, true, 620), fontSize: 11 }}>
-                    {project.construction_duration || '—'}
+                  <td style={{ ...cellStyle(false, true, fixedColumnOffsets.duration, false, fixedColumnWidths.duration), fontSize: 11 }}>
+                    {project.is_subtotal || project.is_total ? (
+                      project.construction_duration ?? '—'
+                    ) : (
+                      <input
+                        type="number"
+                        value={projectFieldEdits[getFieldKey(project.id, 'construction_duration')] ?? getDisplayValue(project.construction_duration)}
+                        onChange={(e) => setFieldEditValue(project.id, 'construction_duration', e.target.value)}
+                        onBlur={(e) => {
+                          commitNumericField(project.id, 'construction_duration', e.target.value, 'int');
+                          clearFieldEditValue(project.id, 'construction_duration');
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') e.currentTarget.blur();
+                          if (e.key === 'Escape') {
+                            clearFieldEditValue(project.id, 'construction_duration');
+                            e.currentTarget.blur();
+                          }
+                        }}
+                        style={inlineInputStyle}
+                      />
+                    )}
                   </td>
                   
                   {/* Месяцы */}
                   {filteredMonths.map((date, idx) => {
-                    const milestone = getMilestone(project, date);
+                    const milestones = getMilestones(project, date) || [];
+                    const legendMilestones = milestones.filter(m => m.milestone_type);
+                    const primaryMilestone = legendMilestones[0] || null;
+                    const cellAreaValue = getCellAreaValue(project, date);
                     const dateStr = formatDateLocal(date);
                     const cellKey = `${project.id}-${dateStr}`;
                     const isUpdating = updatingCells.has(cellKey);
                     const isEditing = editingCell?.projectId === project.id && editingCell?.date === dateStr;
-                    const cellMilestoneStyle = getMilestoneCellStyle(milestone);
+                    const cellMilestoneStyle = legendMilestones.length === 1 ? getMilestoneCellStyle(primaryMilestone) : {};
                     
+                    const isAreaEditing = editingAreaCell?.projectId === project.id && editingAreaCell?.date === dateStr;
+
                     return (
-                      <td 
-                        key={idx}
-                        style={{ 
-                          ...cellStyle(),
-                          ...cellMilestoneStyle,
-                          cursor: project.is_subtotal || project.is_total || isUpdating ? 'default' : 'pointer',
-                          position: 'relative',
-                          padding: 2,
-                          transition: 'background 0.2s',
-                          opacity: isUpdating ? 0.6 : 1
-                        }}
-                        onClick={() => !project.is_subtotal && !project.is_total && handleCellClick(project.id, date)}
-                      >
-                        {isUpdating && (
-                          <div style={{
-                            position: 'absolute',
-                            top: 0, left: 0, right: 0, bottom: 0,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            zIndex: 5
-                          }}>
-                            <div className="loading-spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />
-                          </div>
-                        )}
-                        {isEditing ? (
-                          <div style={{ 
-                            position: 'absolute', 
-                            top: '100%', 
-                            left: '50%', 
-                            transform: 'translateX(-50%)',
-                            zIndex: 1000,
-                            background: isDark ? '#1e293b' : '#fff',
-                            padding: 12,
-                            borderRadius: 8,
-                            boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-                            minWidth: 220,
-                            border: `1px solid ${isDark ? '#475569' : '#e2e8f0'}`
+                      <React.Fragment key={idx}>
+                        <td 
+                          style={{ 
+                            ...cellStyle(),
+                            ...cellMilestoneStyle,
+                            cursor: project.is_subtotal || project.is_total || isUpdating ? 'default' : 'pointer',
+                            position: 'relative',
+                            padding: 2,
+                            transition: 'background 0.2s',
+                            opacity: isUpdating ? 0.6 : 1
                           }}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <div style={{ marginBottom: 8, fontSize: 11, color: 'var(--text-muted)' }}>
-                              {project.name.trim()} - {formatMonth(date)} {date.getFullYear()}
+                          onClick={() => !project.is_subtotal && !project.is_total && handleCellClick(project.id, date)}
+                        >
+                          {isUpdating && (
+                            <div style={{
+                              position: 'absolute',
+                              top: 0, left: 0, right: 0, bottom: 0,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              zIndex: 5
+                            }}>
+                              <div className="loading-spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />
                             </div>
-                            <select
-                              value={selectedMilestoneType}
-                              onChange={(e) => setSelectedMilestoneType(e.target.value)}
-                              className="form-control"
-                              style={{ marginBottom: 8, fontSize: 12, height: 32 }}
+                          )}
+                          {isEditing ? (
+                            <div style={{ 
+                              position: 'absolute', 
+                              top: '100%', 
+                              left: '50%', 
+                              transform: 'translateX(-50%)',
+                              zIndex: 1000,
+                              background: isDark ? '#1e293b' : '#fff',
+                              padding: 12,
+                              borderRadius: 8,
+                              boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                              minWidth: 220,
+                              border: `1px solid ${isDark ? '#475569' : '#e2e8f0'}`
+                            }}
+                              onClick={(e) => e.stopPropagation()}
                             >
-                              <option value="">— Статус (РНВ, стр-во, ПФ, РНС) —</option>
-                              {Object.keys(MILESTONE_TYPES).map(t => (
-                                <option key={t} value={t}>{t}</option>
-                              ))}
-                            </select>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={editAreaValue}
-                              onChange={(e) => setEditAreaValue(e.target.value)}
-                              placeholder="Площадь (м²)"
-                              className="form-control"
-                              style={{ marginBottom: 8, fontSize: 12, height: 32 }}
-                              autoFocus
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') saveCellEdit();
-                                if (e.key === 'Escape') closeEditModal();
-                              }}
-                            />
-                            <input
-                              type="text"
-                              value={editValue}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              placeholder="Комментарий (опционально)"
-                              className="form-control"
-                              style={{ marginBottom: 12, fontSize: 12, height: 32 }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') saveCellEdit();
-                                if (e.key === 'Escape') closeEditModal();
-                              }}
-                            />
-                            <div style={{ display: 'flex', gap: 8 }}>
-                              <button onClick={saveCellEdit} className="btn btn-primary btn-sm" style={{ flex: 2, height: 32 }}>
-                                Сохранить
-                              </button>
-                              <button onClick={closeEditModal} className="btn btn-secondary btn-sm" style={{ flex: 1, height: 32 }}>
-                                ✕
-                              </button>
+                              <div style={{ marginBottom: 8, fontSize: 11, color: 'var(--text-muted)' }}>
+                                {project.name.trim()} - {formatMonth(date)} {date.getFullYear()}
+                              </div>
+                              <select
+                                value={selectedMilestoneType}
+                                onChange={(e) => setSelectedMilestoneType(e.target.value)}
+                                className="form-control"
+                                style={{ marginBottom: 8, fontSize: 12, height: 32 }}
+                              >
+                                <option value="">— Статус (РНВ, стр-во, ПФ, РНС) —</option>
+                                {Object.keys(MILESTONE_TYPES).map(t => (
+                                  <option key={t} value={t}>{t}</option>
+                                ))}
+                              </select>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <button onClick={saveCellEdit} className="btn btn-primary btn-sm" style={{ flex: 2, height: 32 }}>
+                                  Сохранить
+                                </button>
+                                <button onClick={closeEditModal} className="btn btn-secondary btn-sm" style={{ flex: 1, height: 32 }}>
+                                  ✕
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        ) : (
-                          <div style={{ 
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 2,
-                            minHeight: 32,
-                            justifyContent: 'center',
-                            padding: '2px 1px'
-                          }}>
-                            {/* Первая строка - статус */}
+                          ) : (
                             <div style={{ 
-                              fontSize: 9, 
-                              fontWeight: milestone?.milestone_type ? 600 : 400,
-                              color: milestone?.milestone_type ? (MILESTONE_TYPES[milestone.milestone_type]?.color || 'var(--text-primary)') : 'var(--text-muted)',
-                              lineHeight: 1.2
+                              display: 'flex',
+                              flexDirection: 'column',
+                              minHeight: 52,
+                              padding: '4px 2px'
                             }}>
-                              {milestone?.milestone_type || ''}
+                              <div style={{ 
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 4,
+                                flexGrow: 1,
+                                justifyContent: 'center'
+                              }}>
+                              {legendMilestones.length === 0 ? (
+                                  <div style={{ 
+                                    fontSize: 9, 
+                                    fontWeight: 400,
+                                    color: 'var(--text-muted)',
+                                    lineHeight: 1.2,
+                                    minHeight: 12
+                                  }} />
+                                ) : (
+                                  legendMilestones.map((m, idx) => {
+                                    const type = MILESTONE_TYPES[m.milestone_type] || { color: 'var(--text-primary)', bgColor: 'transparent' };
+                                    return (
+                                      <div
+                                        key={m.id || idx}
+                                        style={{
+                                          display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        gap: 4,
+                                        padding: '2px 4px',
+                                          borderRadius: 4,
+                                          background: type.bgColor,
+                                          color: type.color,
+                                          lineHeight: 1.2
+                                        }}
+                                      onClick={(e) => e.stopPropagation()}
+                                      >
+                                      <div style={{ fontSize: 9, fontWeight: 600, flex: 1, textAlign: 'left' }}>
+                                          {m.milestone_type || ''}
+                                        </div>
+                                      <button
+                                        type="button"
+                                        title="Удалить"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (project.is_subtotal || project.is_total) return;
+                                          deleteLegendMilestone(project, date, m);
+                                        }}
+                                        style={{
+                                          border: 'none',
+                                          background: 'transparent',
+                                          color: type.color,
+                                          fontSize: 10,
+                                          lineHeight: 1,
+                                          cursor: 'pointer',
+                                          padding: 0,
+                                          opacity: 0.7
+                                        }}
+                                      >
+                                        ✕
+                                      </button>
+                                      </div>
+                                    );
+                                  })
+                                )}
+                              </div>
+                              <div
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (project.is_subtotal || project.is_total) return;
+                                  setEditingAreaCell({ projectId: project.id, date: dateStr, displayDate: date });
+                                  setAreaEditValue(cellAreaValue ?? '');
+                                }}
+                                style={{ 
+                                  fontSize: 8, 
+                                  fontWeight: cellAreaValue ? 600 : 400,
+                                  color: cellAreaValue ? 'var(--text-primary)' : 'var(--text-muted)',
+                                  lineHeight: 1.2,
+                                  minHeight: 18,
+                                  paddingTop: 2,
+                                  borderTop: `1px solid ${isDark ? 'rgba(71, 85, 105, 0.3)' : 'rgba(226, 232, 240, 0.8)'}`,
+                                  textAlign: 'center',
+                                  cursor: project.is_subtotal || project.is_total ? 'default' : 'text'
+                                }}
+                              >
+                                {isAreaEditing ? (
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={areaEditValue}
+                                    onChange={(e) => setAreaEditValue(e.target.value)}
+                                    onBlur={saveAreaOnlyEdit}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') saveAreaOnlyEdit();
+                                      if (e.key === 'Escape') closeAreaEdit();
+                                    }}
+                                    autoFocus
+                                    style={{
+                                      width: '100%',
+                                      height: 18,
+                                      border: 'none',
+                                      outline: 'none',
+                                      background: 'transparent',
+                                      color: 'inherit',
+                                      fontSize: 8,
+                                      textAlign: 'center'
+                                    }}
+                                  />
+                                ) : (
+                                  cellAreaValue ? `${cellAreaValue.toLocaleString('ru-RU')} м²` : ''
+                                )}
+                              </div>
                             </div>
-                            {/* Вторая строка - м2 */}
-                            <div style={{ 
-                              fontSize: 8, 
-                              fontWeight: milestone?.area_value ? 500 : 400,
-                              color: milestone?.area_value ? 'var(--text-primary)' : 'var(--text-muted)',
-                              lineHeight: 1.2
-                            }}>
-                              {milestone?.area_value ? `${milestone.area_value.toLocaleString('ru-RU')} м²` : ''}
-                            </div>
-                          </div>
+                          )}
+                        </td>
+                        {date.getMonth() === 11 && (
+                          <td style={{ ...yearTotalColumnStyle(false, false) }}>
+                            {(() => {
+                              const total = getYearAreaTotal(project, date.getFullYear());
+                              return total ? total.toLocaleString('ru-RU') : '—';
+                            })()}
+                          </td>
                         )}
-                      </td>
+                      </React.Fragment>
                     );
                   })}
                   
                   {/* Действия */}
-                  <td style={{ ...cellStyle() }}>
-                    {!project.is_subtotal && !project.is_total && (
-                      <button 
-                        onClick={() => deleteProject(project.id)}
-                        className="btn btn-sm"
-                        style={{ 
-                          background: 'transparent', 
-                          border: 'none', 
-                          color: '#ef4444',
-                          padding: 4,
-                          cursor: 'pointer',
-                          opacity: 0.5
-                        }}
-                        onMouseEnter={(e) => e.target.style.opacity = 1}
-                        onMouseLeave={(e) => e.target.style.opacity = 0.5}
-                        title="Удалить строку"
-                      >
-                        🗑️
-                      </button>
-                    )}
-                  </td>
+                  <td style={{ ...cellStyle() }} />
                 </tr>
               ))
             )}

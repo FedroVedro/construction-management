@@ -4,9 +4,8 @@ from . import models
 from .database import engine
 from .routers import auth, users, cities, schedules, dashboard, construction_stages, project_office, strategic_map
 
-# Создание таблиц отключено из-за проблем с поврежденной БД
-# Используйте create_new_database.py для создания новой БД
-# models.Base.metadata.create_all(bind=engine)
+# Создание таблиц
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Construction Management API")
 
