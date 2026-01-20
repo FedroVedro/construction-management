@@ -260,7 +260,8 @@ const StrategicMap = () => {
       } catch (e) {
         console.error(e);
         showError('Ошибка при обновлении');
-        fetchData(); 
+        // В случае ошибки перезагружаем данные
+        await fetchData();
       } finally {
         setUpdatingCells(prev => {
           const next = new Set(prev);
@@ -307,10 +308,13 @@ const StrategicMap = () => {
       }
       const areaCarrier = monthMilestones.find(m => m.area_value !== null && m.area_value !== undefined) || null;
 
+      let updatedMilestones = [...(project.milestones || [])];
+
       if (!selectedMilestoneType) {
         if (parsedAreaValue === null) {
           // Если тип не выбран и площадь пустая — очищаем все вехи в этой ячейке
           await Promise.all(monthMilestones.map(m => client.delete(`/strategic-map/milestones/${m.id}`)));
+          updatedMilestones = updatedMilestones.filter(m => !monthMilestones.find(mm => mm.id === m.id));
         } else {
           // Тип не выбран, но площадь задана — сохраняем площадь на уровне ячейки
           let carrier = areaCarrier;
@@ -319,8 +323,11 @@ const StrategicMap = () => {
           }
           if (carrier) {
             await client.put(`/strategic-map/milestones/${carrier.id}`, { area_value: parsedAreaValue });
+            updatedMilestones = updatedMilestones.map(m => 
+              m.id === carrier.id ? { ...m, area_value: parsedAreaValue } : m
+            );
           } else {
-            await client.post(
+            const response = await client.post(
               `/strategic-map/projects/${editingCell.projectId}/milestones`,
               {
                 month_date: editingCell.date,
@@ -330,10 +337,14 @@ const StrategicMap = () => {
                 is_key_milestone: false
               }
             );
+            updatedMilestones.push(response.data);
           }
           const toClear = monthMilestones.filter(m => carrier && m.id !== carrier.id && m.area_value !== null && m.area_value !== undefined);
           if (toClear.length > 0) {
             await Promise.all(toClear.map(m => client.put(`/strategic-map/milestones/${m.id}`, { area_value: null })));
+            updatedMilestones = updatedMilestones.map(m => 
+              toClear.find(tc => tc.id === m.id) ? { ...m, area_value: null } : m
+            );
           }
         }
       } else {
@@ -347,6 +358,11 @@ const StrategicMap = () => {
               is_key_milestone: ['РНС', 'Завершение'].includes(selectedMilestoneType)
             }
           );
+          updatedMilestones = updatedMilestones.map(m => 
+            m.id === selectedMilestone.id 
+              ? { ...m, value: editValue || null, milestone_type: selectedMilestoneType, is_key_milestone: ['РНС', 'Завершение'].includes(selectedMilestoneType) }
+              : m
+          );
         } else {
           const created = await client.post(
             `/strategic-map/projects/${editingCell.projectId}/milestones`,
@@ -359,28 +375,47 @@ const StrategicMap = () => {
             }
           );
           selectedMilestone = created.data;
+          updatedMilestones.push(selectedMilestone);
         }
 
         if (parsedAreaValue === null) {
           if (areaCarrier) {
             await client.put(`/strategic-map/milestones/${areaCarrier.id}`, { area_value: null });
+            updatedMilestones = updatedMilestones.map(m => 
+              m.id === areaCarrier.id ? { ...m, area_value: null } : m
+            );
           }
         } else {
           const carrier = areaCarrier || selectedMilestone;
           if (carrier) {
             await client.put(`/strategic-map/milestones/${carrier.id}`, { area_value: parsedAreaValue });
+            updatedMilestones = updatedMilestones.map(m => 
+              m.id === carrier.id ? { ...m, area_value: parsedAreaValue } : m
+            );
             const toClear = monthMilestones.filter(m => m.id !== carrier.id && m.area_value !== null && m.area_value !== undefined);
             if (toClear.length > 0) {
               await Promise.all(toClear.map(m => client.put(`/strategic-map/milestones/${m.id}`, { area_value: null })));
+              updatedMilestones = updatedMilestones.map(m => 
+                toClear.find(tc => tc.id === m.id) ? { ...m, area_value: null } : m
+              );
             }
           }
         }
       }
-      await fetchData();
+
+      // Обновляем локальное состояние вместо перезагрузки
+      setProjects(prev => prev.map(p => 
+        p.id === editingCell.projectId 
+          ? { ...p, milestones: updatedMilestones }
+          : p
+      ));
+
       showSuccess('Сохранено');
     } catch (e) {
       console.error(e);
       showError('Ошибка сохранения');
+      // В случае ошибки перезагружаем данные
+      await fetchData();
     }
     closeEditModal();
   };
@@ -402,9 +437,14 @@ const StrategicMap = () => {
       const monthMilestones = getMilestones(project, displayDate) || [];
       const areaCarrier = monthMilestones.find(m => m.area_value !== null && m.area_value !== undefined) || null;
 
+      let updatedMilestones = [...(project.milestones || [])];
+
       if (parsedAreaValue === null) {
         if (areaCarrier) {
           await client.put(`/strategic-map/milestones/${areaCarrier.id}`, { area_value: null });
+          updatedMilestones = updatedMilestones.map(m => 
+            m.id === areaCarrier.id ? { ...m, area_value: null } : m
+          );
         }
       } else {
         let carrier = areaCarrier;
@@ -413,8 +453,11 @@ const StrategicMap = () => {
         }
         if (carrier) {
           await client.put(`/strategic-map/milestones/${carrier.id}`, { area_value: parsedAreaValue });
+          updatedMilestones = updatedMilestones.map(m => 
+            m.id === carrier.id ? { ...m, area_value: parsedAreaValue } : m
+          );
         } else {
-          await client.post(
+          const response = await client.post(
             `/strategic-map/projects/${editingAreaCell.projectId}/milestones`,
             {
               month_date: editingAreaCell.date,
@@ -424,18 +467,30 @@ const StrategicMap = () => {
               is_key_milestone: false
             }
           );
+          updatedMilestones.push(response.data);
         }
         const toClear = monthMilestones.filter(m => carrier && m.id !== carrier.id && m.area_value !== null && m.area_value !== undefined);
         if (toClear.length > 0) {
           await Promise.all(toClear.map(m => client.put(`/strategic-map/milestones/${m.id}`, { area_value: null })));
+          updatedMilestones = updatedMilestones.map(m => 
+            toClear.find(tc => tc.id === m.id) ? { ...m, area_value: null } : m
+          );
         }
       }
 
-      await fetchData();
+      // Обновляем локальное состояние вместо перезагрузки
+      setProjects(prev => prev.map(p => 
+        p.id === editingAreaCell.projectId 
+          ? { ...p, milestones: updatedMilestones }
+          : p
+      ));
+
       showSuccess('Сохранено');
     } catch (e) {
       console.error(e);
       showError('Ошибка сохранения');
+      // В случае ошибки перезагружаем данные
+      await fetchData();
     }
 
     closeAreaEdit();
@@ -453,13 +508,20 @@ const StrategicMap = () => {
       const remaining = allMilestones.filter(x => x.id !== milestone.id);
       const areaToPreserve = milestone.area_value ?? null;
 
+      let updatedMilestones = [...(project.milestones || [])];
+
       await client.delete(`/strategic-map/milestones/${milestone.id}`);
+      updatedMilestones = updatedMilestones.filter(m => m.id !== milestone.id);
+
       if (areaToPreserve !== null) {
         if (remaining.length > 0) {
           const carrier = remaining[0];
           await client.put(`/strategic-map/milestones/${carrier.id}`, { area_value: areaToPreserve });
+          updatedMilestones = updatedMilestones.map(m => 
+            m.id === carrier.id ? { ...m, area_value: areaToPreserve } : m
+          );
         } else {
-          await client.post(
+          const response = await client.post(
             `/strategic-map/projects/${project.id}/milestones`,
             {
               month_date: dateStr,
@@ -469,12 +531,21 @@ const StrategicMap = () => {
               is_key_milestone: false
             }
           );
+          updatedMilestones.push(response.data);
         }
       }
-      await fetchData();
+
+      // Обновляем локальное состояние вместо перезагрузки
+      setProjects(prev => prev.map(p => 
+        p.id === project.id 
+          ? { ...p, milestones: updatedMilestones }
+          : p
+      ));
     } catch (e) {
       console.error(e);
       showError('Ошибка удаления');
+      // В случае ошибки перезагружаем данные
+      await fetchData();
     } finally {
       setUpdatingCells(prev => {
         const next = new Set(prev);
