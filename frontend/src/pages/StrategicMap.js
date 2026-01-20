@@ -919,75 +919,37 @@ const StrategicMap = () => {
 
       {/* Toolbar */}
       <div style={toolbarStyle}>
-        <input
-          type="text"
-          placeholder="🔍 Поиск проекта..."
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          style={{ minWidth: 240, maxWidth: 300 }}
-        />
-        
-        <select 
-          value={yearFilter} 
-          onChange={(e) => setYearFilter(e.target.value)}
-          style={{ minWidth: 120 }}
-        >
-          <option value="all">Все годы</option>
-          {availableYears.map(y => (
-            <option key={y} value={y}>{y}</option>
-          ))}
-        </select>
-
-        {/* Быстрое заполнение */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>Быстрый ввод:</span>
-          <div style={{ display: 'flex', gap: 4, padding: 2, background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.5)', borderRadius: 6 }}>
-            {Object.keys(MILESTONE_TYPES).map(type => (
-              <button
-                key={type}
-                onClick={() => setQuickFillType(quickFillType === type ? null : type)}
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 6,
-                  background: MILESTONE_TYPES[type].color,
-                  border: quickFillType === type 
-                    ? `3px solid ${isDark ? '#fff' : '#000'}` 
-                    : `1px solid ${isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)'}`,
-                  cursor: 'pointer',
-                  opacity: quickFillType === type ? 1 : 0.5,
-                  transition: 'all 0.2s',
-                  position: 'relative',
-                  boxShadow: quickFillType === type 
-                    ? `0 0 10px ${MILESTONE_TYPES[type].color}` 
-                    : 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-                title={`Режим быстрой расстановки: ${type}`}
-              >
-                {quickFillType === type && (
-                  <span style={{ color: '#fff', fontSize: 12, fontWeight: 'bold', textShadow: '0 0 2px #000' }}>✓</span>
-                )}
-              </button>
+        {/* Первая строка: Поиск и фильтры */}
+        <div style={{ 
+          display: 'flex', 
+          gap: 12, 
+          alignItems: 'center', 
+          flexWrap: 'wrap',
+          width: '100%'
+        }}>
+          <input
+            type="text"
+            placeholder="🔍 Поиск проекта..."
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            style={{ minWidth: 200, maxWidth: 300, flex: '1 1 200px' }}
+          />
+          
+          <select 
+            value={yearFilter} 
+            onChange={(e) => setYearFilter(e.target.value)}
+            style={{ minWidth: 120, flex: '0 0 auto' }}
+          >
+            <option value="all">Все годы</option>
+            {availableYears.map(y => (
+              <option key={y} value={y}>{y}</option>
             ))}
-            {quickFillType && (
-              <button 
-                onClick={() => setQuickFillType(null)}
-                style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 12, padding: '0 4px' }}
-                title="Отключить быстрый ввод"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-        </div>
+          </select>
 
-        <div style={{ flex: 1 }} />
+          <div style={{ flex: 1, minWidth: 20 }} />
 
-        {/* Управление годами */}
-        <div style={yearRangeStyle}>
+          {/* Управление годами */}
+          <div style={yearRangeStyle}>
           <button
             onClick={addYearBefore}
             style={yearStepButtonStyle}
@@ -1065,6 +1027,93 @@ const StrategicMap = () => {
           >
             + год
           </button>
+        </div>
+        </div>
+
+        {/* Вторая строка: Быстрый ввод */}
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 8,
+          width: '100%',
+          flexWrap: 'wrap',
+          paddingTop: 12,
+          borderTop: `1px solid ${isDark ? 'rgba(71, 85, 105, 0.3)' : 'rgba(203, 213, 225, 0.5)'}`
+        }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Быстрый ввод:</span>
+          <div style={{ 
+            display: 'flex', 
+            gap: 6, 
+            flexWrap: 'wrap',
+            alignItems: 'center'
+          }}>
+            {Object.entries(MILESTONE_TYPES).map(([type, val]) => (
+              <button
+                key={type}
+                onClick={() => setQuickFillType(quickFillType === type ? null : type)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 12px',
+                  borderRadius: 6,
+                  background: quickFillType === type 
+                    ? val.color
+                    : (isDark ? 'rgba(30, 41, 59, 0.6)' : 'rgba(248, 250, 252, 0.8)'),
+                  border: quickFillType === type 
+                    ? `2px solid ${val.color}` 
+                    : `1px solid ${isDark ? 'rgba(71, 85, 105, 0.3)' : 'rgba(203, 213, 225, 0.5)'}`,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  boxShadow: quickFillType === type 
+                    ? `0 0 12px ${val.color}40` 
+                    : 'none',
+                  color: quickFillType === type 
+                    ? '#fff'
+                    : 'var(--text-primary)',
+                  fontSize: 11,
+                  fontWeight: quickFillType === type ? 600 : 500,
+                  whiteSpace: 'nowrap'
+                }}
+                title={`Режим быстрой расстановки: ${type}`}
+              >
+                <div style={{ 
+                  width: 10, 
+                  height: 10, 
+                  borderRadius: 2,
+                  background: quickFillType === type ? '#fff' : val.color,
+                  border: quickFillType === type ? 'none' : `2px solid ${val.color}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  {quickFillType === type && (
+                    <span style={{ fontSize: 8, color: val.color, fontWeight: 'bold' }}>✓</span>
+                  )}
+                </div>
+                <span>{val.label}</span>
+              </button>
+            ))}
+            {quickFillType && (
+              <button 
+                onClick={() => setQuickFillType(null)}
+                style={{ 
+                  background: isDark ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.1)', 
+                  border: `1px solid ${isDark ? 'rgba(239, 68, 68, 0.4)' : 'rgba(239, 68, 68, 0.3)'}`,
+                  borderRadius: 6,
+                  cursor: 'pointer', 
+                  fontSize: 11, 
+                  padding: '6px 10px',
+                  color: '#ef4444',
+                  fontWeight: 500,
+                  transition: 'all 0.2s'
+                }}
+                title="Отключить быстрый ввод"
+              >
+                ✕ Отключить
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
