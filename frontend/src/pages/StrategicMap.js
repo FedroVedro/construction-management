@@ -6,6 +6,7 @@ import { useTheme } from '../context/ThemeContext';
 // Константы для типов вех и их цветов
 const MILESTONE_TYPES = {
   'РНС': { color: '#22c55e', bgColor: 'rgba(34, 197, 94, 0.15)', label: 'РНС' },
+  'РНВ': { color: '#14b8a6', bgColor: 'rgba(20, 184, 166, 0.15)', label: 'РНВ' },
   'Продажа': { color: '#3b82f6', bgColor: 'rgba(59, 130, 246, 0.15)', label: 'Продажа' },
   'Строительство': { color: '#f59e0b', bgColor: 'rgba(245, 158, 11, 0.15)', label: 'Строит.' },
   'Проектирование': { color: '#8b5cf6', bgColor: 'rgba(139, 92, 246, 0.15)', label: 'Проект.' },
@@ -1335,71 +1336,7 @@ const StrategicMap = () => {
                               <div className="loading-spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />
                             </div>
                           )}
-                          {isEditing ? (
-                            <div style={{ 
-                              position: 'absolute', 
-                              top: '100%', 
-                              left: '50%', 
-                              transform: 'translateX(-50%)',
-                              zIndex: 1000,
-                              background: isDark ? '#1e293b' : '#fff',
-                              padding: 12,
-                              borderRadius: 8,
-                              boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-                              minWidth: 220,
-                              border: `1px solid ${isDark ? '#475569' : '#e2e8f0'}`
-                            }}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <div style={{ marginBottom: 8, fontSize: 11, color: 'var(--text-muted)' }}>
-                                {project.name.trim()} - {formatMonth(date)} {date.getFullYear()}
-                              </div>
-                              <select
-                                value={selectedMilestoneType}
-                                onChange={(e) => setSelectedMilestoneType(e.target.value)}
-                                style={{ marginBottom: 8, fontSize: 12, height: 32 }}
-                              >
-                                <option value="">— Статус (РНВ, стр-во, ПФ, РНС) —</option>
-                                {Object.keys(MILESTONE_TYPES).map(t => (
-                                  <option key={t} value={t}>{t}</option>
-                                ))}
-                              </select>
-                              <div style={{ display: 'flex', gap: 8 }}>
-                                <button 
-                                  onClick={saveCellEdit} 
-                                  style={{ 
-                                    flex: 2, 
-                                    height: 32,
-                                    background: '#3b82f6',
-                                    color: '#fff',
-                                    border: 'none',
-                                    borderRadius: 6,
-                                    cursor: 'pointer',
-                                    fontSize: 12,
-                                    fontWeight: 600
-                                  }}
-                                >
-                                  Сохранить
-                                </button>
-                                <button 
-                                  onClick={closeEditModal} 
-                                  style={{ 
-                                    flex: 1, 
-                                    height: 32,
-                                    background: isDark ? '#475569' : '#e2e8f0',
-                                    color: isDark ? '#fff' : '#1e293b',
-                                    border: 'none',
-                                    borderRadius: 6,
-                                    cursor: 'pointer',
-                                    fontSize: 12,
-                                    fontWeight: 600
-                                  }}
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
+                          {!isEditing && (
                             <div style={{ 
                               display: 'flex',
                               flexDirection: 'column',
@@ -1660,6 +1597,102 @@ const StrategicMap = () => {
           </tbody>
         </table>
       </div>
+
+      {/* Modal Window */}
+      {editingCell && (
+        <>
+          {/* Backdrop */}
+          <div 
+            style={{ 
+              position: 'fixed', 
+              top: 0, 
+              left: 0, 
+              right: 0, 
+              bottom: 0, 
+              background: 'rgba(0, 0, 0, 0.5)',
+              zIndex: 99998,
+              backdropFilter: 'blur(2px)'
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              closeEditModal();
+            }}
+          />
+          {/* Modal */}
+          <div style={{ 
+            position: 'fixed', 
+            top: '50%', 
+            left: '50%', 
+            transform: 'translate(-50%, -50%)',
+            zIndex: 99999,
+            background: isDark ? '#1e293b' : '#fff',
+            padding: 20,
+            borderRadius: 12,
+            boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+            minWidth: 320,
+            border: `2px solid ${isDark ? '#475569' : '#e2e8f0'}`
+          }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ marginBottom: 12, fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+              {editingCell && projects.find(p => p.id === editingCell.projectId)?.name.trim()}
+            </div>
+            <div style={{ marginBottom: 16, fontSize: 11, color: 'var(--text-muted)' }}>
+              {editingCell && formatMonth(editingCell.displayDate || new Date(editingCell.date))} {editingCell && (editingCell.displayDate || new Date(editingCell.date)).getFullYear()}
+            </div>
+            <select
+              value={selectedMilestoneType}
+              onChange={(e) => setSelectedMilestoneType(e.target.value)}
+              style={{ marginBottom: 16, fontSize: 13, height: 40, width: '100%' }}
+            >
+              <option value="">— Выберите статус —</option>
+              {Object.keys(MILESTONE_TYPES).map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button 
+                onClick={saveCellEdit} 
+                style={{ 
+                  flex: 2, 
+                  height: 40,
+                  background: '#3b82f6',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.target.style.background = '#2563eb'}
+                onMouseLeave={(e) => e.target.style.background = '#3b82f6'}
+              >
+                Сохранить
+              </button>
+              <button 
+                onClick={closeEditModal} 
+                style={{ 
+                  flex: 1, 
+                  height: 40,
+                  background: isDark ? '#475569' : '#e2e8f0',
+                  color: isDark ? '#fff' : '#1e293b',
+                  border: 'none',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.target.style.background = isDark ? '#64748b' : '#cbd5e1'}
+                onMouseLeave={(e) => e.target.style.background = isDark ? '#475569' : '#e2e8f0'}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
     </div>
   );
