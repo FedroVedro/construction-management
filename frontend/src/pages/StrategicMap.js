@@ -1543,6 +1543,144 @@ const StrategicMap = () => {
                 </tr>
               ))
             )}
+            
+            {/* Итоговые строки */}
+            {filteredProjects.length > 0 && (
+              <>
+                {/* Итого в строительстве м² по месяцам */}
+                <tr style={{ 
+                  background: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(245, 158, 11, 0.1)',
+                  borderTop: `2px solid ${isDark ? 'rgba(245, 158, 11, 0.4)' : 'rgba(245, 158, 11, 0.3)'}`
+                }}>
+                  <td 
+                    colSpan={6}
+                    style={{ 
+                      ...cellStyle(false, true, fixedColumnOffsets.index, false, fixedColumnWidths.index + fixedColumnWidths.project + fixedColumnWidths.status + fixedColumnWidths.sections + fixedColumnWidths.area + fixedColumnWidths.duration),
+                      fontWeight: 700,
+                      fontSize: 12,
+                      textAlign: 'left',
+                      padding: '10px 12px',
+                      background: isDark ? 'rgba(245, 158, 11, 0.2)' : 'rgba(245, 158, 11, 0.15)',
+                      color: isDark ? '#fbbf24' : '#d97706'
+                    }}
+                  >
+                    Итого в строительстве м² по месяцам
+                  </td>
+                  {filteredMonths.map((date, idx) => {
+                    const constructionProjects = filteredProjects.filter(p => 
+                      !p.is_subtotal && !p.is_total && p.current_status === 'Строительство'
+                    );
+                    const totalArea = constructionProjects.reduce((sum, project) => {
+                      const milestones = getMilestones(project, date) || [];
+                      const areaValue = milestones.find(m => m.area_value !== null && m.area_value !== undefined)?.area_value || 0;
+                      return sum + areaValue;
+                    }, 0);
+                    
+                    return (
+                      <React.Fragment key={idx}>
+                        <td style={{ 
+                          ...cellStyle(false, false),
+                          fontWeight: 700,
+                          fontSize: 11,
+                          background: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(245, 158, 11, 0.1)',
+                          color: totalArea > 0 ? (isDark ? '#fbbf24' : '#d97706') : 'var(--text-muted)'
+                        }}>
+                          {totalArea > 0 ? totalArea.toLocaleString('ru-RU') : '—'}
+                        </td>
+                        {date.getMonth() === 11 && (
+                          <td style={{ 
+                            ...yearTotalColumnStyle(false, false),
+                            fontWeight: 700,
+                            fontSize: 11,
+                            background: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(245, 158, 11, 0.1)',
+                            color: isDark ? '#fbbf24' : '#d97706'
+                          }}>
+                            {(() => {
+                              const yearTotal = constructionProjects.reduce((sum, project) => {
+                                const total = getYearAreaTotal(project, date.getFullYear());
+                                return sum + (total || 0);
+                              }, 0);
+                              return yearTotal > 0 ? yearTotal.toLocaleString('ru-RU') : '—';
+                            })()}
+                          </td>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                  <td style={{ 
+                    ...cellStyle(),
+                    background: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(245, 158, 11, 0.1)'
+                  }} />
+                </tr>
+
+                {/* Итого в строительстве объектов */}
+                <tr style={{ 
+                  background: isDark ? 'rgba(245, 158, 11, 0.1)' : 'rgba(245, 158, 11, 0.05)'
+                }}>
+                  <td 
+                    colSpan={6}
+                    style={{ 
+                      ...cellStyle(false, true, fixedColumnOffsets.index, false, fixedColumnWidths.index + fixedColumnWidths.project + fixedColumnWidths.status + fixedColumnWidths.sections + fixedColumnWidths.area + fixedColumnWidths.duration),
+                      fontWeight: 700,
+                      fontSize: 12,
+                      textAlign: 'left',
+                      padding: '10px 12px',
+                      background: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(245, 158, 11, 0.1)',
+                      color: isDark ? '#fbbf24' : '#d97706'
+                    }}
+                  >
+                    Итого в строительстве объектов
+                  </td>
+                  {filteredMonths.map((date, idx) => {
+                    const constructionProjects = filteredProjects.filter(p => 
+                      !p.is_subtotal && !p.is_total && p.current_status === 'Строительство'
+                    );
+                    const count = constructionProjects.filter(project => {
+                      const milestones = getMilestones(project, date) || [];
+                      return milestones.length > 0;
+                    }).length;
+                    
+                    return (
+                      <React.Fragment key={idx}>
+                        <td style={{ 
+                          ...cellStyle(false, false),
+                          fontWeight: 700,
+                          fontSize: 11,
+                          background: isDark ? 'rgba(245, 158, 11, 0.1)' : 'rgba(245, 158, 11, 0.05)',
+                          color: count > 0 ? (isDark ? '#fbbf24' : '#d97706') : 'var(--text-muted)'
+                        }}>
+                          {count > 0 ? count : '—'}
+                        </td>
+                        {date.getMonth() === 11 && (
+                          <td style={{ 
+                            ...yearTotalColumnStyle(false, false),
+                            fontWeight: 700,
+                            fontSize: 11,
+                            background: isDark ? 'rgba(245, 158, 11, 0.1)' : 'rgba(245, 158, 11, 0.05)',
+                            color: isDark ? '#fbbf24' : '#d97706'
+                          }}>
+                            {(() => {
+                              const yearCount = constructionProjects.filter(project => {
+                                const yearDates = filteredMonths.filter(d => d.getFullYear() === date.getFullYear());
+                                return yearDates.some(d => {
+                                  const milestones = getMilestones(project, d) || [];
+                                  return milestones.length > 0;
+                                });
+                              }).length;
+                              return yearCount > 0 ? yearCount : '—';
+                            })()}
+                          </td>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                  <td style={{ 
+                    ...cellStyle(),
+                    background: isDark ? 'rgba(245, 158, 11, 0.1)' : 'rgba(245, 158, 11, 0.05)'
+                  }} />
+                </tr>
+              </>
+            )}
           </tbody>
         </table>
       </div>
