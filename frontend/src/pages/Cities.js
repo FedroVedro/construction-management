@@ -8,7 +8,8 @@ const Cities = () => {
   const [editingCity, setEditingCity] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
-    description: ''
+    description: '',
+    visible_in_schedules: true
   });
   const { showSuccess, showError } = useToast();
 
@@ -48,7 +49,8 @@ const Cities = () => {
     setEditingCity(city);
     setFormData({
       name: city.name,
-      description: city.description || ''
+      description: city.description || '',
+      visible_in_schedules: city.visible_in_schedules !== undefined ? city.visible_in_schedules : true
     });
     setShowForm(true);
   };
@@ -66,10 +68,26 @@ const Cities = () => {
     }
   };
 
+  const toggleVisibility = async (city) => {
+    try {
+      const newVisibility = !city.visible_in_schedules;
+      await client.put(`/cities/${city.id}`, {
+        name: city.name,
+        description: city.description,
+        visible_in_schedules: newVisibility
+      });
+      showSuccess(newVisibility ? 'Объект будет отображаться в графиках' : 'Объект скрыт из графиков');
+      fetchCities();
+    } catch (error) {
+      console.error('Error toggling visibility:', error);
+      showError('Ошибка при изменении видимости объекта');
+    }
+  };
+
   const resetForm = () => {
     setShowForm(false);
     setEditingCity(null);
-    setFormData({ name: '', description: '' });
+    setFormData({ name: '', description: '', visible_in_schedules: true });
   };
 
   return (
@@ -108,6 +126,21 @@ const Cities = () => {
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               />
             </div>
+            <div className="form-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={formData.visible_in_schedules}
+                  onChange={(e) => setFormData({ ...formData, visible_in_schedules: e.target.checked })}
+                  style={{ cursor: 'pointer' }}
+                />
+                <span>📊 Отображать в графиках отделов</span>
+              </label>
+              <small style={{ color: 'var(--text-muted)', marginLeft: '28px', display: 'block', marginTop: '4px' }}>
+                Когда отключено, объект не будет отображаться в графиках отделов (HR, Закупки, Строительство и т.д.), 
+                но останется видимым в Мастер-карте стратегического развития
+              </small>
+            </div>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button type="submit" className="btn btn-primary">
                 {editingCity ? 'Обновить' : 'Создать'}
@@ -129,6 +162,7 @@ const Cities = () => {
                 <th>ID</th>
                 <th>Название</th>
                 <th>Описание</th>
+                <th>Видимость в графиках</th>
                 <th>Дата создания</th>
                 <th>Действия</th>
               </tr>
@@ -139,6 +173,27 @@ const Cities = () => {
                   <td>{city.id}</td>
                   <td>{city.name}</td>
                   <td>{city.description || '-'}</td>
+                  <td>
+                    <button
+                      className="btn btn-sm"
+                      onClick={() => toggleVisibility(city)}
+                      style={{
+                        backgroundColor: city.visible_in_schedules ? '#22c55e' : '#ef4444',
+                        color: 'white',
+                        border: 'none',
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                        transition: 'all 0.2s',
+                        minWidth: '120px'
+                      }}
+                      title={city.visible_in_schedules ? 'Кликните, чтобы скрыть из графиков' : 'Кликните, чтобы показать в графиках'}
+                    >
+                      {city.visible_in_schedules ? '✓ Отображается' : '✕ Скрыт'}
+                    </button>
+                  </td>
                   <td>{new Date(city.created_at).toLocaleDateString()}</td>
                   <td>
                     <button 
