@@ -14,6 +14,16 @@ const MILESTONE_TYPES = {
   'Подготовка': { color: '#6366f1', bgColor: 'rgba(99, 102, 241, 0.15)', label: 'Подгот.' },
 };
 
+// Константы для статусов проектов
+const STATUS_OPTIONS = [
+  'Строительство',
+  'Проектирование, экспертиза, получение РНС',
+  'Поиск участка',
+  'Приобретение прав на участок',
+  'Есть право на зу, ждет реализации',
+  'Завершен'
+];
+
 const StrategicMap = () => {
   const { showSuccess, showError } = useToast();
   const { isDark } = useTheme();
@@ -728,7 +738,7 @@ const StrategicMap = () => {
   const fixedColumnWidths = {
     index: 40,
     project: 160,
-    status: 80,
+    status: 160,
     sections: 70,
     area: 100,
     duration: 80
@@ -781,10 +791,11 @@ const StrategicMap = () => {
         : (isDark ? 'rgba(15, 23, 42, 0.1)' : 'transparent'),
       position: (isFixed || isFixedVertical) ? 'sticky' : 'static',
       left: isFixed ? fixedLeft : 'auto',
-      top: topValue,
-      zIndex: isFixed && isFixedVertical ? 30 : (isFixed ? 20 : (isFixedVertical ? 10 : 1)),
-      minWidth: isFixed ? fixedWidth : 100,
-      maxWidth: isFixed ? fixedWidth : 120,
+      top: isFixedVertical ? topValue : 'auto',
+      zIndex: isFixed && isFixedVertical ? 30 : (isFixed ? 20 : (isFixedVertical ? 15 : 1)),
+      width: isFixed ? fixedWidth : 'auto',
+      minWidth: isFixed ? fixedWidth : (isHeader ? 60 : 80),
+      maxWidth: isFixed ? fixedWidth : 'none',
       ...(minHeight ? { minHeight } : {}),
     };
   };
@@ -841,14 +852,12 @@ const StrategicMap = () => {
           placeholder="🔍 Поиск проекта..."
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
-          className="form-control"
           style={{ minWidth: 240, maxWidth: 300 }}
         />
         
         <select 
           value={yearFilter} 
           onChange={(e) => setYearFilter(e.target.value)}
-          className="form-control"
           style={{ minWidth: 120 }}
         >
           <option value="all">Все годы</option>
@@ -914,13 +923,16 @@ const StrategicMap = () => {
           >
             − год
           </button>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 240 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textAlign: 'center' }}>
               {startYear} — {endYear}
             </div>
-            <div style={rangeTrackStyle}>
-              <div style={rangeTrackBaseStyle} />
-              <div style={rangeTrackActiveStyle(startYear, endYear)} />
+            
+            {/* Начальный год */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <label style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'left' }}>
+                Начало: {startYear}
+              </label>
               <input
                 type="range"
                 min={yearRangeLimits.min}
@@ -930,8 +942,26 @@ const StrategicMap = () => {
                   const next = Math.min(parseInt(e.target.value, 10), endYear);
                   setStartYear(next);
                 }}
-                style={{ ...rangeInputStyle, ...rangeThumbStyle }}
+                style={{
+                  width: '100%',
+                  height: 6,
+                  borderRadius: 999,
+                  appearance: 'none',
+                  background: `linear-gradient(to right, 
+                    ${isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.4)'} 0%, 
+                    ${isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.4)'} ${((startYear - yearRangeLimits.min) / (yearRangeLimits.max - yearRangeLimits.min)) * 100}%, 
+                    ${isDark ? 'rgba(59, 130, 246, 0.8)' : 'rgba(59, 130, 246, 0.6)'} ${((startYear - yearRangeLimits.min) / (yearRangeLimits.max - yearRangeLimits.min)) * 100}%, 
+                    ${isDark ? 'rgba(59, 130, 246, 0.8)' : 'rgba(59, 130, 246, 0.6)'} 100%)`,
+                  cursor: 'pointer'
+                }}
               />
+            </div>
+            
+            {/* Конечный год */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <label style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'left' }}>
+                Конец: {endYear}
+              </label>
               <input
                 type="range"
                 min={yearRangeLimits.min}
@@ -941,7 +971,18 @@ const StrategicMap = () => {
                   const next = Math.max(parseInt(e.target.value, 10), startYear);
                   setEndYear(next);
                 }}
-                style={{ ...rangeInputStyle, ...rangeThumbStyle }}
+                style={{
+                  width: '100%',
+                  height: 6,
+                  borderRadius: 999,
+                  appearance: 'none',
+                  background: `linear-gradient(to right, 
+                    ${isDark ? 'rgba(59, 130, 246, 0.8)' : 'rgba(59, 130, 246, 0.6)'} 0%, 
+                    ${isDark ? 'rgba(59, 130, 246, 0.8)' : 'rgba(59, 130, 246, 0.6)'} ${((endYear - yearRangeLimits.min) / (yearRangeLimits.max - yearRangeLimits.min)) * 100}%, 
+                    ${isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.4)'} ${((endYear - yearRangeLimits.min) / (yearRangeLimits.max - yearRangeLimits.min)) * 100}%, 
+                    ${isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.4)'} 100%)`,
+                  cursor: 'pointer'
+                }}
               />
             </div>
           </div>
@@ -981,8 +1022,8 @@ const StrategicMap = () => {
       </div>
 
       {/* Main Table */}
-      <div style={{ ...tableContainerStyle, maxHeight: '350px' }} ref={tableRef}>
-        <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', height: '200px', display: 'flex', flexWrap: 'wrap', tableLayout: 'fixed' }}>
+      <div style={{ ...tableContainerStyle, maxHeight: '700px' }} ref={tableRef}>
+        <table style={{ borderCollapse: 'separate', borderSpacing: 0, minWidth: '100%', tableLayout: 'auto' }}>
           <thead>
             {/* Кварталы */}
             <tr>
@@ -1077,54 +1118,6 @@ const StrategicMap = () => {
               <th style={{ ...cellStyle(true, false, 0, 'top2') }}></th>
             </tr>
             
-            {/* Месяцы - вторая строка (м2) */}
-            <tr>
-              <th style={{ 
-                ...cellStyle(true, true, fixedColumnOffsets.index, 'top3', fixedColumnWidths.index),
-                fontSize: 9,
-                color: 'var(--text-muted)',
-                borderTop: 'none'
-              }}>
-              </th>
-              <th style={{ 
-                ...cellStyle(true, true, fixedColumnOffsets.project, 'top3', fixedColumnWidths.project),
-                fontSize: 9,
-                color: 'var(--text-muted)',
-                borderTop: 'none'
-              }}>
-              </th>
-              <th style={{ ...cellStyle(true, true, fixedColumnOffsets.status, 'top3', fixedColumnWidths.status), fontSize: 9, borderTop: 'none' }}></th>
-              <th style={{ ...cellStyle(true, true, fixedColumnOffsets.sections, 'top3', fixedColumnWidths.sections), fontSize: 9, borderTop: 'none' }}></th>
-              <th style={{ ...cellStyle(true, true, fixedColumnOffsets.area, 'top3', fixedColumnWidths.area), fontSize: 9, borderTop: 'none' }}></th>
-              <th style={{ ...cellStyle(true, true, fixedColumnOffsets.duration, 'top3', fixedColumnWidths.duration), fontSize: 9, borderTop: 'none' }}></th>
-              {filteredMonths.map((date, idx) => (
-                <React.Fragment key={idx}>
-                  <th 
-                    style={{ 
-                      ...cellStyle(true, false, 0, 'top3'),
-                      fontSize: 10,
-                      padding: '4px 2px',
-                      minHeight: headerRowHeights.top3,
-                      lineHeight: 1.2,
-                      color: 'var(--text-muted)',
-                      fontWeight: 400,
-                      background: date.getMonth() === 0 
-                        ? (isDark ? 'rgba(59, 130, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)')
-                        : (isDark ? '#1e293b' : '#f8fafc'),
-                      borderTop: 'none'
-                    }}
-                  >
-                    м²
-                  </th>
-                  {date.getMonth() === 11 && (
-                    <th style={{ ...yearTotalColumnStyle(true, 'top3'), borderTop: 'none' }}>
-                      м²
-                    </th>
-                  )}
-                </React.Fragment>
-              ))}
-              <th style={{ ...cellStyle(true, false, 0, 'top3'), borderTop: 'none' }}></th>
-            </tr>
           </thead>
           
           <tbody>
@@ -1189,27 +1182,42 @@ const StrategicMap = () => {
                   </td>
                   
                   {/* Текущий статус */}
-                  <td style={{ ...cellStyle(false, true, fixedColumnOffsets.status, false, fixedColumnWidths.status), fontSize: 11 }}>
+                  <td style={{ 
+                    ...cellStyle(false, true, fixedColumnOffsets.status, false, fixedColumnWidths.status), 
+                    fontSize: 11,
+                    whiteSpace: 'normal',
+                    wordWrap: 'break-word',
+                    verticalAlign: 'middle'
+                  }}>
                     {project.is_subtotal || project.is_total ? (
-                      project.current_status || '—'
+                      <div style={{ whiteSpace: 'normal', wordWrap: 'break-word' }}>
+                        {project.current_status || '—'}
+                      </div>
                     ) : (
-                      <input
-                        type="text"
+                      <select
                         value={projectFieldEdits[getFieldKey(project.id, 'current_status')] ?? getDisplayValue(project.current_status)}
-                        onChange={(e) => setFieldEditValue(project.id, 'current_status', e.target.value)}
-                        onBlur={(e) => {
-                          commitTextField(project.id, 'current_status', e.target.value);
+                        onChange={(e) => {
+                          const newValue = e.target.value;
+                          setFieldEditValue(project.id, 'current_status', newValue);
+                          commitTextField(project.id, 'current_status', newValue);
                           clearFieldEditValue(project.id, 'current_status');
                         }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') e.currentTarget.blur();
-                          if (e.key === 'Escape') {
-                            clearFieldEditValue(project.id, 'current_status');
-                            e.currentTarget.blur();
-                          }
+                        style={{
+                          ...inlineInputStyle,
+                          cursor: 'pointer',
+                          paddingRight: 20,
+                          height: 'auto',
+                          minHeight: 60,
+                          whiteSpace: 'normal',
+                          wordWrap: 'break-word',
+                          lineHeight: '1.4'
                         }}
-                        style={inlineInputStyle}
-                      />
+                      >
+                        <option value="">—</option>
+                        {STATUS_OPTIONS.map(status => (
+                          <option key={status} value={status}>{status}</option>
+                        ))}
+                      </select>
                     )}
                   </td>
                   
@@ -1349,7 +1357,6 @@ const StrategicMap = () => {
                               <select
                                 value={selectedMilestoneType}
                                 onChange={(e) => setSelectedMilestoneType(e.target.value)}
-                                className="form-control"
                                 style={{ marginBottom: 8, fontSize: 12, height: 32 }}
                               >
                                 <option value="">— Статус (РНВ, стр-во, ПФ, РНС) —</option>
@@ -1358,10 +1365,36 @@ const StrategicMap = () => {
                                 ))}
                               </select>
                               <div style={{ display: 'flex', gap: 8 }}>
-                                <button onClick={saveCellEdit} className="btn btn-primary btn-sm" style={{ flex: 2, height: 32 }}>
+                                <button 
+                                  onClick={saveCellEdit} 
+                                  style={{ 
+                                    flex: 2, 
+                                    height: 32,
+                                    background: '#3b82f6',
+                                    color: '#fff',
+                                    border: 'none',
+                                    borderRadius: 6,
+                                    cursor: 'pointer',
+                                    fontSize: 12,
+                                    fontWeight: 600
+                                  }}
+                                >
                                   Сохранить
                                 </button>
-                                <button onClick={closeEditModal} className="btn btn-secondary btn-sm" style={{ flex: 1, height: 32 }}>
+                                <button 
+                                  onClick={closeEditModal} 
+                                  style={{ 
+                                    flex: 1, 
+                                    height: 32,
+                                    background: isDark ? '#475569' : '#e2e8f0',
+                                    color: isDark ? '#fff' : '#1e293b',
+                                    border: 'none',
+                                    borderRadius: 6,
+                                    cursor: 'pointer',
+                                    fontSize: 12,
+                                    fontWeight: 600
+                                  }}
+                                >
                                   ✕
                                 </button>
                               </div>
@@ -1502,6 +1535,128 @@ const StrategicMap = () => {
                 </tr>
               ))
             )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Summary Table - Area by Status */}
+      <div style={{ 
+        marginTop: 24,
+        background: isDark ? 'rgba(15, 23, 42, 0.6)' : 'rgba(255, 255, 255, 0.95)',
+        borderRadius: 16,
+        border: `1px solid ${isDark ? 'rgba(71, 85, 105, 0.4)' : 'rgba(203, 213, 225, 0.6)'}`,
+        boxShadow: isDark 
+          ? '0 4px 24px rgba(0, 0, 0, 0.3)' 
+          : '0 4px 24px rgba(0, 0, 0, 0.08)',
+        padding: 16,
+        maxWidth: 600
+      }}>
+        <h3 style={{ 
+          fontSize: 16, 
+          fontWeight: 600, 
+          marginBottom: 12,
+          color: 'var(--text-primary)'
+        }}>
+          ИТОГО
+        </h3>
+        <table style={{ 
+          width: '100%', 
+          borderCollapse: 'collapse'
+        }}>
+          <tbody>
+            {STATUS_OPTIONS.map(status => {
+              const total = filteredProjects
+                .filter(p => !p.is_subtotal && !p.is_total && p.current_status === status)
+                .reduce((sum, p) => sum + (p.sellable_area || 0), 0);
+              
+              const bgColor = status === 'Завершен' 
+                ? '#fef08a'
+                : status === 'Строительство'
+                  ? '#fecaca'
+                  : status === 'Проектирование, экспертиза, получение РНС'
+                    ? '#fef3c7'
+                    : 'transparent';
+              
+              return (
+                <tr key={status} style={{ 
+                  borderBottom: `1px solid ${isDark ? 'rgba(71, 85, 105, 0.3)' : 'rgba(226, 232, 240, 0.8)'}`
+                }}>
+                  <td style={{ 
+                    padding: '8px 12px',
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: 'var(--text-primary)',
+                    background: bgColor,
+                    borderRight: `1px solid ${isDark ? 'rgba(71, 85, 105, 0.3)' : 'rgba(226, 232, 240, 0.8)'}`
+                  }}>
+                    {status}
+                  </td>
+                  <td style={{ 
+                    padding: '8px 12px',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    textAlign: 'right',
+                    color: 'var(--text-primary)',
+                    background: bgColor
+                  }}>
+                    {total > 0 ? total.toLocaleString('ru-RU') : '—'}
+                  </td>
+                </tr>
+              );
+            })}
+            
+            {/* Стратегия 2026 */}
+            <tr style={{ 
+              borderBottom: `1px solid ${isDark ? 'rgba(71, 85, 105, 0.3)' : 'rgba(226, 232, 240, 0.8)'}`
+            }}>
+              <td style={{ 
+                padding: '8px 12px',
+                fontSize: 13,
+                fontWeight: 500,
+                color: 'var(--text-primary)',
+                borderRight: `1px solid ${isDark ? 'rgba(71, 85, 105, 0.3)' : 'rgba(226, 232, 240, 0.8)'}`
+              }}>
+                Стратегия 2026
+              </td>
+              <td style={{ 
+                padding: '8px 12px',
+                fontSize: 13,
+                fontWeight: 600,
+                textAlign: 'right',
+                color: 'var(--text-primary)'
+              }}>
+                {(() => {
+                  const total = filteredProjects
+                    .filter(p => !p.is_subtotal && !p.is_total)
+                    .reduce((sum, p) => sum + (p.sellable_area || 0), 0);
+                  return total > 0 ? total.toLocaleString('ru-RU') : '—';
+                })()}
+              </td>
+            </tr>
+            
+            {/* Стратегия 2027 */}
+            <tr>
+              <td style={{ 
+                padding: '8px 12px',
+                fontSize: 13,
+                fontWeight: 500,
+                color: '#fff',
+                background: '#dc2626',
+                borderRight: `1px solid ${isDark ? 'rgba(71, 85, 105, 0.3)' : 'rgba(226, 232, 240, 0.8)'}`
+              }}>
+                Стратегия 2027
+              </td>
+              <td style={{ 
+                padding: '8px 12px',
+                fontSize: 13,
+                fontWeight: 600,
+                textAlign: 'right',
+                color: '#fff',
+                background: '#dc2626'
+              }}>
+                —
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
