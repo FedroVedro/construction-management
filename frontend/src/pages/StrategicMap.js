@@ -556,24 +556,6 @@ const StrategicMap = () => {
   };
 
 
-  // Удаление проекта
-  const deleteProject = async (projectId) => {
-    const project = projects.find(p => p.id === projectId);
-    const message = project?.city_id 
-      ? 'Внимание! Проект привязан к объекту строительства и будет автоматически восстановлен при следующей синхронизации. Удалить проект?'
-      : 'Удалить проект?';
-    
-    if (!window.confirm(message)) return;
-    try {
-      await client.delete(`/strategic-map/projects/${projectId}`);
-      await fetchData();
-      showSuccess('Проект удалён');
-    } catch (e) {
-      console.error(e);
-      showError('Ошибка удаления');
-    }
-  };
-
   // Фильтрация проектов
   const filteredProjects = useMemo(() => {
     if (!searchText.trim()) return projects;
@@ -726,52 +708,6 @@ const StrategicMap = () => {
     background: isDark ? 'rgba(51, 65, 85, 0.5)' : 'rgba(226, 232, 240, 0.5)',
     borderRadius: 10,
     padding: '8px 10px'
-  };
-
-  const rangeTrackStyle = {
-    position: 'relative',
-    minWidth: 240,
-    height: 28,
-    display: 'flex',
-    alignItems: 'center'
-  };
-
-  const rangeInputStyle = {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    width: '100%',
-    margin: 0,
-    pointerEvents: 'none',
-    appearance: 'none',
-    background: 'transparent'
-  };
-
-  const rangeThumbStyle = {
-    pointerEvents: 'auto'
-  };
-
-  const rangeTrackBaseStyle = {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    height: 6,
-    borderRadius: 999,
-    background: isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.4)'
-  };
-
-  const rangeTrackActiveStyle = (start, end) => {
-    const span = yearRangeLimits.max - yearRangeLimits.min || 1;
-    const left = ((start - yearRangeLimits.min) / span) * 100;
-    const right = ((end - yearRangeLimits.min) / span) * 100;
-    return {
-      position: 'absolute',
-      height: 6,
-      borderRadius: 999,
-      left: `${left}%`,
-      width: `${Math.max(0, right - left)}%`,
-      background: isDark ? 'rgba(59, 130, 246, 0.7)' : 'rgba(37, 99, 235, 0.7)'
-    };
   };
 
   const yearStepButtonStyle = {
