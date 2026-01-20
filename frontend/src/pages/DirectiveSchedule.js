@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import CalendarGanttChart from '../components/Dashboard/CalendarGanttChart';
+import StatusBadge from '../components/StatusBadge';
 import client from '../api/client';
 
 const DirectiveSchedule = () => {

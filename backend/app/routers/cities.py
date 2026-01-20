@@ -13,6 +13,18 @@ def read_cities(
     current_user: models.User = Depends(auth.get_current_user)
 ):
     cities = crud.get_cities(db, skip=skip, limit=limit)
+    
+    # Подтягиваем статусы из Мастер-карты для каждого объекта
+    for city in cities:
+        strategic_project = db.query(models.StrategicMapProject).filter(
+            models.StrategicMapProject.city_id == city.id
+        ).first()
+        
+        if strategic_project and strategic_project.current_status:
+            city.current_status = strategic_project.current_status
+        else:
+            city.current_status = None
+    
     return cities
 
 @router.get("/{city_id}", response_model=schemas.City)

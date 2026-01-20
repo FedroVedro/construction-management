@@ -90,6 +90,23 @@ const Cities = () => {
     setFormData({ name: '', description: '', visible_in_schedules: true });
   };
 
+  // Функция для определения цвета статуса
+  const getStatusStyle = (status) => {
+    const statusColors = {
+      'Завершен': { bg: '#22c55e', text: '#fff' },
+      'Строительство': { bg: '#f59e0b', text: '#fff' },
+      'Проектирование': { bg: '#3b82f6', text: '#fff' },
+      'Согласование': { bg: '#8b5cf6', text: '#fff' },
+      'Подготовка': { bg: '#06b6d4', text: '#fff' },
+      'Поиск участка': { bg: '#6366f1', text: '#fff' },
+      'Приобретение прав на участок': { bg: '#a855f7', text: '#fff' },
+      'Есть право на зу, ждет реализации': { bg: '#ec4899', text: '#fff' },
+      'Проектирование, экспертиза, получение РНС': { bg: '#14b8a6', text: '#fff' },
+    };
+
+    return statusColors[status] || { bg: '#64748b', text: '#fff' };
+  };
+
   return (
     <div className="container-fluid">
       <h1>Управление объектами строительства</h1>
@@ -162,6 +179,7 @@ const Cities = () => {
                 <th>ID</th>
                 <th>Название</th>
                 <th>Описание</th>
+                <th>Статус</th>
                 <th>Видимость в графиках</th>
                 <th>Дата создания</th>
                 <th>Действия</th>
@@ -173,6 +191,27 @@ const Cities = () => {
                   <td>{city.id}</td>
                   <td>{city.name}</td>
                   <td>{city.description || '-'}</td>
+                  <td>
+                    {city.current_status ? (
+                      <span
+                        style={{
+                          backgroundColor: getStatusStyle(city.current_status).bg,
+                          color: getStatusStyle(city.current_status).text,
+                          padding: '4px 12px',
+                          borderRadius: '12px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          display: 'inline-block',
+                          whiteSpace: 'nowrap'
+                        }}
+                        title="Статус из Мастер-карты"
+                      >
+                        {city.current_status}
+                      </span>
+                    ) : (
+                      <span style={{ color: '#94a3b8', fontSize: '13px' }}>—</span>
+                    )}
+                  </td>
                   <td>
                     <button
                       className="btn btn-sm"
@@ -214,7 +253,7 @@ const Cities = () => {
               ))}
               {cities.length === 0 && (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>
                     Нет объектов строительства. Добавьте первый объект.
                   </td>
                 </tr>

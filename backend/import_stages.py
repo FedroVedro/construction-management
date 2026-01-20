@@ -112,7 +112,7 @@ def import_stages():
                 # Создаем новый этап
                 stage = models.ConstructionStage(
                     name=stage_name,
-                    description=f"Импортирован из списка",
+                    description=f"-",
                     order_index=max_order + created_count,
                     is_active=True
                 )

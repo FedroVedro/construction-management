@@ -8,6 +8,7 @@ import ScheduleFilters from '../components/ScheduleFilters';
 import ScheduleToolbar from '../components/ScheduleToolbar';
 import QuickDatePicker from '../components/QuickDatePicker';
 import RowActions from '../components/RowActions';
+import StatusBadge from '../components/StatusBadge';
 import { saveScheduleOrder, applyScheduleOrder } from '../utils/scheduleOrderStorage';
 import { saveSelectedCity, getSelectedCity, saveViewMode, getViewMode } from '../utils/userPreferences';
 import { validateDates, prepareRowForCopy } from '../utils/scheduleHelpers';
@@ -408,10 +409,14 @@ const DocumentSchedule = () => {
                 cursor: 'pointer',
                 transition: 'all 0.2s',
                 whiteSpace: 'nowrap',
-                boxShadow: selectedCity === city.id ? '0 2px 8px rgba(0, 123, 255, 0.3)' : 'none'
+                boxShadow: selectedCity === city.id ? '0 2px 8px rgba(0, 123, 255, 0.3)' : 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
               }}
             >
-              {city.name}
+              <span>{city.name}</span>
+              {city.current_status && <StatusBadge status={city.current_status} />}
             </button>
           ))}
         </div>

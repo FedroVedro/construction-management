@@ -44,6 +44,7 @@ class City(CityBase):
     id: int
     created_at: datetime
     updated_at: Optional[datetime] = None
+    current_status: Optional[str] = None  # Статус из Мастер-карты
     
     class Config:
         from_attributes = True
