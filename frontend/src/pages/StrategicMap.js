@@ -1828,30 +1828,6 @@ const StrategicMap = () => {
                 })()}
               </td>
             </tr>
-            
-            {/* Стратегия 2027 */}
-            <tr>
-              <td style={{ 
-                padding: '8px 12px',
-                fontSize: 13,
-                fontWeight: 500,
-                color: '#fff',
-                background: '#dc2626',
-                borderRight: `1px solid ${isDark ? 'rgba(71, 85, 105, 0.3)' : 'rgba(226, 232, 240, 0.8)'}`
-              }}>
-                Стратегия 2027
-              </td>
-              <td style={{ 
-                padding: '8px 12px',
-                fontSize: 13,
-                fontWeight: 600,
-                textAlign: 'right',
-                color: '#fff',
-                background: '#dc2626'
-              }}>
-                —
-              </td>
-            </tr>
           </tbody>
         </table>
       </div>
