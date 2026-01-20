@@ -1799,35 +1799,6 @@ const StrategicMap = () => {
                 </tr>
               );
             })}
-            
-            {/* Стратегия 2026 */}
-            <tr style={{ 
-              borderBottom: `1px solid ${isDark ? 'rgba(71, 85, 105, 0.3)' : 'rgba(226, 232, 240, 0.8)'}`
-            }}>
-              <td style={{ 
-                padding: '8px 12px',
-                fontSize: 13,
-                fontWeight: 500,
-                color: 'var(--text-primary)',
-                borderRight: `1px solid ${isDark ? 'rgba(71, 85, 105, 0.3)' : 'rgba(226, 232, 240, 0.8)'}`
-              }}>
-                Стратегия 2026
-              </td>
-              <td style={{ 
-                padding: '8px 12px',
-                fontSize: 13,
-                fontWeight: 600,
-                textAlign: 'right',
-                color: 'var(--text-primary)'
-              }}>
-                {(() => {
-                  const total = filteredProjects
-                    .filter(p => !p.is_subtotal && !p.is_total)
-                    .reduce((sum, p) => sum + (p.sellable_area || 0), 0);
-                  return total > 0 ? total.toLocaleString('ru-RU') : '—';
-                })()}
-              </td>
-            </tr>
           </tbody>
         </table>
       </div>
