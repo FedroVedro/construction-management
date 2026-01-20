@@ -19,7 +19,9 @@ const DirectiveSchedule = () => {
   const fetchCities = async () => {
     try {
       const response = await client.get('/cities');
-      setCities(response.data);
+      // Фильтруем только объекты, которые должны отображаться в графиках
+      const visibleCities = response.data.filter(city => city.visible_in_schedules !== false);
+      setCities(visibleCities);
     } catch (error) {
       console.error('Error fetching cities:', error);
     }

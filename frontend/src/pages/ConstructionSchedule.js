@@ -86,11 +86,13 @@ const ConstructionSchedule = () => {
   const fetchCities = async () => {
     try {
       const response = await client.get('/cities');
-      setCities(response.data);
-      if (response.data.length > 0) {
+      // Фильтруем только объекты, которые должны отображаться в графиках
+      const visibleCities = response.data.filter(city => city.visible_in_schedules !== false);
+      setCities(visibleCities);
+      if (visibleCities.length > 0) {
         const savedCity = getSelectedCity();
-        const cityExists = response.data.some(c => c.id === savedCity);
-        setSelectedCity(cityExists ? savedCity : response.data[0].id);
+        const cityExists = visibleCities.some(c => c.id === savedCity);
+        setSelectedCity(cityExists ? savedCity : visibleCities[0].id);
       }
     } catch (error) {
       console.error('Error fetching cities:', error);
