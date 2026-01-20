@@ -703,7 +703,11 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
                 position: 'sticky',
                 left: 0,
                 zIndex: 3,
-                minWidth: '150px'
+                minWidth: '150px',
+                maxWidth: '150px',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
               }}>Объект</th>
               <th style={{ 
                 border: '1px solid #ddd',
@@ -809,8 +813,14 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
                     backgroundColor: 'white',
                     position: 'sticky',
                     left: 0,
-                    zIndex: 2
-                  }}>
+                    zIndex: 2,
+                    maxWidth: '150px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}
+                  title={task.cityName}
+                  >
                     {task.cityName}
                   </td>
                   <td style={{ 
