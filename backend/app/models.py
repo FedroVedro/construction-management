@@ -22,6 +22,7 @@ class City(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True)
     description = Column(Text, nullable=True)
+    visible_in_schedules = Column(Boolean, default=True)  # Отображать объект в графиках отделов
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

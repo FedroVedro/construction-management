@@ -30,6 +30,7 @@ class Token(BaseModel):
 class CityBase(BaseModel):
     name: str
     description: Optional[str] = None
+    visible_in_schedules: Optional[bool] = True
 
 class CityCreate(CityBase):
     pass
@@ -37,6 +38,7 @@ class CityCreate(CityBase):
 class CityUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    visible_in_schedules: Optional[bool] = None
 
 class City(CityBase):
     id: int
