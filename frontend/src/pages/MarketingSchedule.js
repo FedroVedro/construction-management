@@ -501,26 +501,31 @@ const MarketingSchedule = () => {
       
       {/* Табы городов */}
       <div style={{ 
-        display: 'flex', 
-        borderBottom: '2px solid var(--border-color)',
-        marginBottom: '16px',
-        alignItems: 'center',
-        justifyContent: 'space-between'
+        borderBottom: '2px solid var(--border-color)', 
+        marginBottom: '16px'
       }}>
-        <div style={{ display: 'flex' }}>
+        <div style={{ 
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '8px',
+          paddingBottom: '8px'
+        }}>
           {cities.map(city => (
             <button
               key={city.id}
               onClick={() => handleCityChange(city.id)}
               style={{
-                padding: '10px 20px',
+                padding: '8px 16px',
                 border: 'none',
-                borderBottom: selectedCity === city.id ? '2px solid #007bff' : 'none',
-                backgroundColor: selectedCity === city.id ? 'var(--table-stripe)' : 'transparent',
-                color: selectedCity === city.id ? '#007bff' : 'var(--text-muted)',
-                fontWeight: selectedCity === city.id ? 'bold' : 'normal',
+                borderRadius: '6px',
+                backgroundColor: selectedCity === city.id ? '#007bff' : 'var(--table-stripe)',
+                color: selectedCity === city.id ? '#fff' : 'var(--text-muted)',
+                fontWeight: selectedCity === city.id ? '600' : 'normal',
+                fontSize: '13px',
                 cursor: 'pointer',
-                transition: 'all 0.3s'
+                transition: 'all 0.2s',
+                whiteSpace: 'nowrap',
+                boxShadow: selectedCity === city.id ? '0 2px 8px rgba(0, 123, 255, 0.3)' : 'none'
               }}
             >
               {city.name}

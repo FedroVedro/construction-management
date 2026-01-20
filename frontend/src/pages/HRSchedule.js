@@ -457,40 +457,51 @@ const HRSchedule = () => {
       <h1>HR-график</h1>
       
       <div style={{ 
-        display: 'flex', 
-        borderBottom: '2px solid var(--border-color)',
-        marginBottom: '20px',
-        alignItems: 'center',
-        justifyContent: 'space-between'
+        marginBottom: '20px'
       }}>
-        <div style={{ display: 'flex' }}>
+        <div style={{ 
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '12px'
+        }}>
+          <h2 style={{ margin: 0, fontSize: '16px', color: 'var(--text-muted)' }}>Выберите объект:</h2>
+          <button
+            onClick={toggleViewMode}
+            className="btn btn-secondary"
+          >
+            {showCalendar ? '📊 Табличный вид' : '📅 Календарный вид'}
+          </button>
+        </div>
+        <div style={{ 
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '8px',
+          paddingBottom: '12px',
+          borderBottom: '2px solid var(--border-color)'
+        }}>
           {cities.map(city => (
             <button
               key={city.id}
               onClick={() => handleCityChange(city.id)}
               style={{
-                padding: '10px 20px',
+                padding: '8px 16px',
                 border: 'none',
-                borderBottom: selectedCity === city.id ? '2px solid #007bff' : 'none',
-                backgroundColor: selectedCity === city.id ? 'var(--table-stripe)' : 'transparent',
-                color: selectedCity === city.id ? '#007bff' : 'var(--text-muted)',
-                fontWeight: selectedCity === city.id ? 'bold' : 'normal',
+                borderRadius: '6px',
+                backgroundColor: selectedCity === city.id ? '#007bff' : 'var(--table-stripe)',
+                color: selectedCity === city.id ? '#fff' : 'var(--text-muted)',
+                fontWeight: selectedCity === city.id ? '600' : 'normal',
+                fontSize: '13px',
                 cursor: 'pointer',
-                transition: 'all 0.3s'
+                transition: 'all 0.2s',
+                whiteSpace: 'nowrap',
+                boxShadow: selectedCity === city.id ? '0 2px 8px rgba(0, 123, 255, 0.3)' : 'none'
               }}
             >
               {city.name}
             </button>
           ))}
         </div>
-        
-        <button
-          onClick={toggleViewMode}
-          className="btn btn-secondary"
-          style={{ marginRight: '20px' }}
-        >
-          {showCalendar ? '📊 Табличный вид' : '📅 Календарный вид'}
-        </button>
       </div>
 
       {!showCalendar && (
