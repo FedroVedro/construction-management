@@ -169,3 +169,54 @@ class StrategicMapMilestone(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     project = relationship("StrategicMapProject", back_populates="milestones")
+
+
+class ProcessRole(Base):
+    """Роли/должности в процессе управления"""
+    __tablename__ = "process_roles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)  # Название должности
+    short_name = Column(String, nullable=True)  # Сокращённое название
+    order_index = Column(Integer, default=0)  # Порядок в таблице (слева направо)
+    is_active = Column(Boolean, default=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    assignments = relationship("ProcessAssignment", back_populates="role", cascade="all, delete-orphan")
+
+
+class ProcessStage(Base):
+    """Этапы процесса управления циклом девелопмента"""
+    __tablename__ = "process_stages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    number = Column(String, nullable=False)  # Номер этапа (1, 1.1, 1.2, 2, etc.)
+    name = Column(String, nullable=False)  # Название этапа
+    predecessor_number = Column(String, nullable=True)  # Номер предшествующей задачи
+    parent_id = Column(Integer, ForeignKey("process_stages.id"), nullable=True)  # Родительский этап
+    order_index = Column(Integer, default=0)  # Порядок сортировки
+    is_active = Column(Boolean, default=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    parent = relationship("ProcessStage", remote_side=[id], backref="children")
+    assignments = relationship("ProcessAssignment", back_populates="stage", cascade="all, delete-orphan")
+
+
+class ProcessAssignment(Base):
+    """Назначения ролей на этапы (согласующий/ответственный)"""
+    __tablename__ = "process_assignments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    stage_id = Column(Integer, ForeignKey("process_stages.id"), nullable=False)
+    role_id = Column(Integer, ForeignKey("process_roles.id"), nullable=False)
+    assignment_type = Column(String, nullable=False)  # 'approver' (Согласующий) или 'responsible' (Ответственный)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    stage = relationship("ProcessStage", back_populates="assignments")
+    role = relationship("ProcessRole", back_populates="assignments")

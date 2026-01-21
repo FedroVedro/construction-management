@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import MasterCard from '../components/Dashboard/MasterCard';
-import CalendarGanttChart from '../components/Dashboard/CalendarGanttChart';
+import ModernGanttChart from '../components/Dashboard/ModernGanttChart';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -12,7 +12,7 @@ const Home = () => {
   const [selectedCity, setSelectedCity] = useState(null);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
-  const { showError } = useToast();
+  const { showError, showSuccess } = useToast();
 
   useEffect(() => {
     fetchCities();
@@ -35,6 +35,17 @@ const Home = () => {
     } catch (error) {
       console.error('Error fetching cities:', error);
       showError('Ошибка при загрузке объектов');
+    }
+  };
+
+  const handleScheduleUpdate = async (scheduleId, updates) => {
+    try {
+      await client.put(`/schedules/${scheduleId}`, updates);
+      showSuccess('Даты обновлены');
+      fetchSchedules();
+    } catch (error) {
+      console.error('Error updating schedule:', error);
+      showError('Ошибка при обновлении дат');
     }
   };
 
@@ -122,7 +133,11 @@ const Home = () => {
               <div style={{ color: 'var(--text-muted)' }}>Загрузка графика...</div>
             </div>
           ) : (
-            <CalendarGanttChart schedules={schedules} cities={cities} />
+            <ModernGanttChart 
+              schedules={schedules} 
+              cities={cities} 
+              onScheduleUpdate={handleScheduleUpdate}
+            />
           )}
         </div>
       )}

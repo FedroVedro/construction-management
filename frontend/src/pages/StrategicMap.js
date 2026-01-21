@@ -1027,7 +1027,7 @@ const StrategicMap = () => {
                     <span style={{ fontSize: 8, color: val.color, fontWeight: 'bold' }}>✓</span>
                   )}
                 </div>
-                <span>{val.label}</span>
+                <span>{type}</span>
               </button>
             ))}
             {quickFillType && (
@@ -1053,30 +1053,6 @@ const StrategicMap = () => {
         </div>
       </div>
 
-      {/* Легенда типов вех */}
-      <div style={{ 
-        display: 'flex', 
-        gap: 16, 
-        marginBottom: 16, 
-        padding: '12px 16px',
-        background: isDark ? 'rgba(30, 41, 59, 0.5)' : 'rgba(248, 250, 252, 0.8)',
-        borderRadius: 8,
-        flexWrap: 'wrap'
-      }}>
-        <span style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 12 }}>Легенда:</span>
-        {Object.entries(MILESTONE_TYPES).map(([key, val]) => (
-          <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ 
-              width: 12, 
-              height: 12, 
-              borderRadius: 3, 
-              background: val.bgColor, 
-              border: `2px solid ${val.color}` 
-            }} />
-            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{key}</span>
-          </div>
-        ))}
-      </div>
 
       {/* Main Table */}
       <div style={{ ...tableContainerStyle, maxHeight: '700px' }} ref={tableRef}>

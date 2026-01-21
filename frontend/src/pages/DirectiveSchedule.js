@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import CalendarGanttChart from '../components/Dashboard/CalendarGanttChart';
+import ModernGanttChart from '../components/Dashboard/ModernGanttChart';
 import StatusBadge from '../components/StatusBadge';
 import client from '../api/client';
 
@@ -67,7 +67,7 @@ const DirectiveSchedule = () => {
             <div>Загрузка данных...</div>
           </div>
         ) : (
-          <CalendarGanttChart schedules={schedules} cities={cities} />
+          <ModernGanttChart schedules={schedules} cities={cities} />
         )}
       </div>
     </div>

@@ -13,27 +13,135 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
   const [delayInfo, setDelayInfo] = useState(null);
   const tableRef = useRef(null);
   const [arrowPaths, setArrowPaths] = useState([]);
+  const [cpmNodes, setCpmNodes] = useState([]);  // Узлы CPM с рассчитанными параметрами
+  const [criticalStages, setCriticalStages] = useState([]);  // Список критических этапов
 
-  // Критические этапы
-  const criticalStages = [
-    'Подготовительные работы',
-    'Разработка котлована', 
-    'Устройство бетонной подготовки и монолитных фундаментных плит',
-    'Фундамент',
-    'Вертикальная оклеечная гидроизоляция стен подвала и монолитной плиты',
-    'Монтаж сборных ж/б конструкций',
-    'Перебазировка и монтаж башенных кранов',
-    'Каменная кладка',
-    'Устройство кровли',
-    'Монтаж оконных конструкций',
-    'Штукатурные работы',
-    'Устройство стяжки пола',
-    'Отделочные работы',
-    'Монтаж дверей',
-    'Монтаж лифтового оборудования',
-    'Пуск тепла',
-    'Получение ЗОС и РНВ'
-  ];
+  // ========== АЛГОРИТМ КРИТИЧЕСКОГО ПУТИ (CPM) ==========
+  // Реализация по методологии ELMA:
+  // 1. Forward Pass - расчёт ранних сроков (ES, EF)
+  // 2. Backward Pass - расчёт поздних сроков (LS, LF)
+  // 3. Расчёт резерва (Float) = LS - ES
+  // 4. Критический путь = задачи с Float = 0
+
+  const calculateCriticalPath = useCallback((tasks, cityId = null) => {
+    // Фильтруем задачи по объекту строительства если указан
+    let filteredTasks = cityId 
+      ? tasks.filter(t => t.cityId === cityId)
+      : tasks;
+    
+    if (filteredTasks.length === 0) return [];
+
+    // Группируем задачи по этапам строительства и сортируем по плановой дате начала
+    const tasksByStage = {};
+    filteredTasks.forEach(task => {
+      const stage = task.constructionStage || 'Без этапа';
+      if (!tasksByStage[stage]) {
+        tasksByStage[stage] = [];
+      }
+      tasksByStage[stage].push(task);
+    });
+
+    // Сортируем этапы по самой ранней дате начала
+    const stageOrder = Object.keys(tasksByStage).sort((a, b) => {
+      const minA = Math.min(...tasksByStage[a].map(t => t.plannedStart.getTime()));
+      const minB = Math.min(...tasksByStage[b].map(t => t.plannedStart.getTime()));
+      return minA - minB;
+    });
+
+    // Создаём узлы для CPM - агрегируем по этапам
+    const nodes = stageOrder.map((stage, index) => {
+      const stageTasks = tasksByStage[stage];
+      const earliestStart = new Date(Math.min(...stageTasks.map(t => t.plannedStart.getTime())));
+      const latestEnd = new Date(Math.max(...stageTasks.map(t => t.plannedEnd.getTime())));
+      const duration = Math.ceil((latestEnd - earliestStart) / (1000 * 60 * 60 * 24));
+      
+      return {
+        id: index,
+        stage: stage,
+        tasks: stageTasks,
+        duration: duration,
+        plannedStart: earliestStart,
+        plannedEnd: latestEnd,
+        // Фактические даты (берём самые поздние)
+        actualStart: stageTasks.some(t => t.actualStart) 
+          ? new Date(Math.min(...stageTasks.filter(t => t.actualStart).map(t => t.actualStart.getTime())))
+          : null,
+        actualEnd: stageTasks.some(t => t.actualEnd)
+          ? new Date(Math.max(...stageTasks.filter(t => t.actualEnd).map(t => t.actualEnd.getTime())))
+          : null,
+        // CPM параметры (будут вычислены)
+        ES: 0, // Early Start
+        EF: 0, // Early Finish
+        LS: 0, // Late Start
+        LF: 0, // Late Finish
+        float: 0, // Резерв времени
+        isCritical: false,
+        predecessors: index > 0 ? [index - 1] : [], // Зависимость от предыдущего этапа
+        successors: index < stageOrder.length - 1 ? [index + 1] : []
+      };
+    });
+
+    if (nodes.length === 0) return [];
+
+    // ========== FORWARD PASS (Прямой ход) ==========
+    // Вычисляем самые ранние возможные сроки (ES, EF)
+    nodes.forEach((node, index) => {
+      if (node.predecessors.length === 0) {
+        // Начальный узел
+        node.ES = 0;
+      } else {
+        // ES = максимум из EF всех предшественников
+        node.ES = Math.max(...node.predecessors.map(predIdx => nodes[predIdx].EF));
+      }
+      node.EF = node.ES + node.duration;
+    });
+
+    // ========== BACKWARD PASS (Обратный ход) ==========
+    // Вычисляем самые поздние допустимые сроки (LS, LF)
+    const projectDuration = Math.max(...nodes.map(n => n.EF));
+    
+    // Идём от конца к началу
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      const node = nodes[i];
+      if (node.successors.length === 0) {
+        // Конечный узел
+        node.LF = projectDuration;
+      } else {
+        // LF = минимум из LS всех последователей
+        node.LF = Math.min(...node.successors.map(succIdx => nodes[succIdx].LS));
+      }
+      node.LS = node.LF - node.duration;
+    }
+
+    // ========== РАСЧЁТ РЕЗЕРВА И КРИТИЧЕСКОГО ПУТИ ==========
+    nodes.forEach(node => {
+      // Total Float = LS - ES = LF - EF
+      node.float = node.LS - node.ES;
+      // Критические задачи имеют нулевой резерв
+      node.isCritical = node.float === 0;
+    });
+
+    return nodes;
+  }, []);
+
+  // Получить критические этапы (с нулевым резервом)
+  const getCriticalStages = useCallback((cpmNodes) => {
+    return cpmNodes.filter(node => node.isCritical).map(node => node.stage);
+  }, []);
+
+  // Проверка, является ли этап критическим
+  const isCriticalStage = useCallback((stageName, cpmNodes) => {
+    if (!cpmNodes || cpmNodes.length === 0) return false;
+    const node = cpmNodes.find(n => n.stage === stageName);
+    return node ? node.isCritical : false;
+  }, []);
+
+  // Получить информацию о резерве для этапа
+  const getStageFloat = useCallback((stageName, cpmNodes) => {
+    if (!cpmNodes || cpmNodes.length === 0) return null;
+    const node = cpmNodes.find(n => n.stage === stageName);
+    return node ? node.float : null;
+  }, []);
 
   // Названия отделов для разных типов
   const typeNames = {
@@ -134,10 +242,6 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     const num = parseFloat(value);
     if (isNaN(num)) return value;
     return num.toLocaleString('ru-RU') + ' руб';
-  };
-
-  const isCriticalStage = (stageName) => {
-    return criticalStages.includes(stageName);
   };
 
   // Функции с useCallback
@@ -402,7 +506,12 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     });
     
     setProcessedData(sorted);
-  }, [schedules, cities, viewMode, sortBy]);
+
+    // Вычисляем критический путь при изменении данных
+    const nodes = calculateCriticalPath(sorted);
+    setCpmNodes(nodes);
+    setCriticalStages(getCriticalStages(nodes));
+  }, [schedules, cities, viewMode, sortBy, calculateCriticalPath, getCriticalStages]);
 
   // useEffect для ResizeObserver
   useEffect(() => {
@@ -486,6 +595,39 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
             {showCriticalPath ? 'Скрыть критический путь' : 'Показать критический путь'}
           </button>
         </div>
+
+        {/* Информация о критическом пути (CPM) */}
+        {showCriticalPath && cpmNodes.length > 0 && (
+          <div style={{
+            marginTop: '15px',
+            padding: '15px',
+            backgroundColor: '#e3f2fd',
+            borderRadius: '8px',
+            border: '2px solid #2196f3'
+          }}>
+            <div style={{ fontWeight: 'bold', color: '#1565c0', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '20px' }}>📊</span>
+              Анализ критического пути (метод CPM)
+            </div>
+            <div style={{ display: 'flex', gap: '30px', flexWrap: 'wrap' }}>
+              <div>
+                <span style={{ color: '#666' }}>Общая длительность проекта:</span>{' '}
+                <strong>{Math.max(...cpmNodes.map(n => n.EF))} дней</strong>
+              </div>
+              <div>
+                <span style={{ color: '#666' }}>Критических этапов:</span>{' '}
+                <strong style={{ color: '#ff6b6b' }}>{criticalStages.length}</strong> из {cpmNodes.length}
+              </div>
+              <div>
+                <span style={{ color: '#666' }}>Этапов с резервом:</span>{' '}
+                <strong style={{ color: '#4CAF50' }}>{cpmNodes.filter(n => n.float > 0).length}</strong>
+              </div>
+            </div>
+            <div style={{ marginTop: '10px', fontSize: '12px', color: '#666' }}>
+              <em>Критический путь — последовательность этапов с нулевым резервом времени. Задержка любого критического этапа сдвигает срок завершения всего проекта.</em>
+            </div>
+          </div>
+        )}
 
         {/* Информация о задержках */}
         {showCriticalPath && delayInfo && (
@@ -794,7 +936,8 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
           </thead>
           <tbody>
             {processedData.map(task => {
-              const isCritical = showCriticalPath && isCriticalStage(task.constructionStage);
+              const isCritical = showCriticalPath && criticalStages.includes(task.constructionStage);
+              const stageFloat = getStageFloat(task.constructionStage, cpmNodes);
               const rowOpacity = showCriticalPath ? (isCritical ? 1 : 0.3) : 1;
               const hasDelay = task.actualEnd && task.plannedEnd && task.actualEnd > task.plannedEnd;
               

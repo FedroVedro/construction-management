@@ -369,3 +369,88 @@ class StrategicMapBulkUpdate(BaseModel):
     """Массовое обновление вех для проекта"""
     project_id: int
     milestones: List[StrategicMapMilestoneCreate]
+
+
+# Process Management schemas
+class ProcessRoleBase(BaseModel):
+    name: str
+    short_name: Optional[str] = None
+    order_index: Optional[int] = 0
+    is_active: Optional[bool] = True
+
+
+class ProcessRoleCreate(ProcessRoleBase):
+    pass
+
+
+class ProcessRoleUpdate(BaseModel):
+    name: Optional[str] = None
+    short_name: Optional[str] = None
+    order_index: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class ProcessRole(ProcessRoleBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ProcessAssignmentBase(BaseModel):
+    stage_id: int
+    role_id: int
+    assignment_type: str  # 'approver' or 'responsible'
+
+
+class ProcessAssignmentCreate(ProcessAssignmentBase):
+    pass
+
+
+class ProcessAssignment(ProcessAssignmentBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ProcessStageBase(BaseModel):
+    number: str
+    name: str
+    predecessor_number: Optional[str] = None
+    parent_id: Optional[int] = None
+    order_index: Optional[int] = 0
+    is_active: Optional[bool] = True
+
+
+class ProcessStageCreate(ProcessStageBase):
+    pass
+
+
+class ProcessStageUpdate(BaseModel):
+    number: Optional[str] = None
+    name: Optional[str] = None
+    predecessor_number: Optional[str] = None
+    parent_id: Optional[int] = None
+    order_index: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class ProcessStageWithAssignments(ProcessStageBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    assignments: List[ProcessAssignment] = []
+
+    class Config:
+        from_attributes = True
+
+
+class ProcessAssignmentBulkUpdate(BaseModel):
+    """Массовое обновление назначений для этапа"""
+    stage_id: int
+    assignments: List[dict]  # [{role_id: int, assignment_type: str}]

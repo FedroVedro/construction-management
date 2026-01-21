@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import CalendarGanttChart from '../components/Dashboard/CalendarGanttChart';
+import ModernGanttChart from '../components/Dashboard/ModernGanttChart';
 import StageAutocomplete from '../components/StageAutocomplete';
 import ScheduleFilters from '../components/ScheduleFilters';
 import ScheduleToolbar from '../components/ScheduleToolbar';
@@ -449,7 +449,7 @@ const DocumentSchedule = () => {
 
       {showCalendar ? (
         <div className="card-full-width">
-          <CalendarGanttChart schedules={schedules} cities={cities} selectedView="document" />
+          <ModernGanttChart schedules={schedules} cities={cities} selectedView="document" />
         </div>
       ) : (
         <>
