@@ -71,6 +71,7 @@ const Navbar = () => {
             <Link to="/project-office" style={linkStyle}>Проектный офис</Link>
             <Link to="/strategic-map" style={{...linkStyle, color: '#a78bfa', fontWeight: 500}}>📊 Мастер-карта</Link>
             <Link to="/process-management" style={{...linkStyle, color: '#fbbf24', fontWeight: 500}}>📋 Процесс управления</Link>
+            <Link to="/dependency-manager" style={{...linkStyle, color: '#f97316', fontWeight: 500}}>🔗 Зависимости</Link>
             {user?.role === 'admin' && (
               <Link to="/telegram-settings" style={linkStyle}>Настройки Telegram</Link>
             )}

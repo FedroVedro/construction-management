@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from . import models
 from .database import engine
-from .routers import auth, users, cities, schedules, dashboard, construction_stages, project_office, strategic_map, process_management
+from .routers import auth, users, cities, schedules, dashboard, construction_stages, project_office, strategic_map, process_management, dependencies
 
 # Создание таблиц
 models.Base.metadata.create_all(bind=engine)
@@ -26,6 +26,7 @@ app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"]
 app.include_router(project_office.router, prefix="/api/project-office", tags=["project_office"])
 app.include_router(strategic_map.router, prefix="/api", tags=["strategic_map"])
 app.include_router(process_management.router, prefix="/api/process-management", tags=["process_management"])
+app.include_router(dependencies.router, prefix="/api/dependencies", tags=["dependencies"])
 
 @app.get("/")
 def read_root():

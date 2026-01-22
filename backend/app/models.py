@@ -220,3 +220,87 @@ class ProcessAssignment(Base):
 
     stage = relationship("ProcessStage", back_populates="assignments")
     role = relationship("ProcessRole", back_populates="assignments")
+
+
+class TaskDependency(Base):
+    """Зависимости между задачами для критического пути"""
+    __tablename__ = "task_dependencies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # Задача-предшественник (от которой зависим)
+    predecessor_id = Column(Integer, ForeignKey("schedules.id"), nullable=False)
+    # Задача-последователь (которая зависит)
+    successor_id = Column(Integer, ForeignKey("schedules.id"), nullable=False)
+    
+    # Тип связи: FS (Finish-to-Start), SS (Start-to-Start), FF (Finish-to-Finish), SF (Start-to-Finish)
+    link_type = Column(String, default="FS", nullable=False)
+    
+    # Задержка в днях (lag) - может быть отрицательной для опережения
+    lag_days = Column(Integer, default=0)
+    
+    # Описание связи (опционально)
+    description = Column(Text, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    predecessor = relationship("Schedule", foreign_keys=[predecessor_id], backref="successors_links")
+    successor = relationship("Schedule", foreign_keys=[successor_id], backref="predecessors_links")
+
+
+class WorkTemplate(Base):
+    """Шаблоны работ для настройки зависимостей"""
+    __tablename__ = "work_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # К какому этапу строительства относится
+    construction_stage_id = Column(Integer, ForeignKey("construction_stages.id"), nullable=True)
+    
+    # К какому типу графика относится (document, hr, procurement, construction, marketing)
+    schedule_type = Column(String, nullable=False)
+    
+    # Наименование работы
+    work_name = Column(String, nullable=False)
+    
+    # Порядок выполнения внутри этапа
+    order_index = Column(Integer, default=0)
+    
+    # Типичная длительность в днях
+    typical_duration = Column(Integer, nullable=True)
+    
+    # Может ли выполняться параллельно с другими работами этого этапа
+    can_parallel = Column(Boolean, default=False)
+    
+    # Активен ли шаблон
+    is_active = Column(Boolean, default=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    construction_stage = relationship("ConstructionStage")
+
+
+class WorkTemplateDependency(Base):
+    """Зависимости между шаблонами работ (для автоматического создания связей)"""
+    __tablename__ = "work_template_dependencies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # Шаблон-предшественник
+    predecessor_template_id = Column(Integer, ForeignKey("work_templates.id"), nullable=False)
+    # Шаблон-последователь  
+    successor_template_id = Column(Integer, ForeignKey("work_templates.id"), nullable=False)
+    
+    # Тип связи
+    link_type = Column(String, default="FS", nullable=False)
+    
+    # Задержка в днях
+    lag_days = Column(Integer, default=0)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    predecessor_template = relationship("WorkTemplate", foreign_keys=[predecessor_template_id], backref="successor_dependencies")
+    successor_template = relationship("WorkTemplate", foreign_keys=[successor_template_id], backref="predecessor_dependencies")

@@ -454,3 +454,144 @@ class ProcessAssignmentBulkUpdate(BaseModel):
     """Массовое обновление назначений для этапа"""
     stage_id: int
     assignments: List[dict]  # [{role_id: int, assignment_type: str}]
+
+
+# ============== Task Dependencies schemas ==============
+
+class TaskDependencyBase(BaseModel):
+    predecessor_id: int
+    successor_id: int
+    link_type: str = "FS"  # FS, SS, FF, SF
+    lag_days: int = 0
+    description: Optional[str] = None
+
+    @validator('link_type')
+    def validate_link_type(cls, v):
+        allowed = ['FS', 'SS', 'FF', 'SF']
+        if v not in allowed:
+            raise ValueError(f"Недопустимый тип связи: {v}. Разрешены: {allowed}")
+        return v
+
+
+class TaskDependencyCreate(TaskDependencyBase):
+    pass
+
+
+class TaskDependencyUpdate(BaseModel):
+    link_type: Optional[str] = None
+    lag_days: Optional[int] = None
+    description: Optional[str] = None
+
+    @validator('link_type')
+    def validate_link_type_update(cls, v):
+        if v is None:
+            return v
+        allowed = ['FS', 'SS', 'FF', 'SF']
+        if v not in allowed:
+            raise ValueError(f"Недопустимый тип связи: {v}. Разрешены: {allowed}")
+        return v
+
+
+class TaskDependency(TaskDependencyBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TaskDependencyWithDetails(TaskDependency):
+    """Зависимость с подробностями о задачах"""
+    predecessor_name: Optional[str] = None
+    predecessor_stage: Optional[str] = None
+    predecessor_type: Optional[str] = None
+    predecessor_city_id: Optional[int] = None
+    successor_name: Optional[str] = None
+    successor_stage: Optional[str] = None
+    successor_type: Optional[str] = None
+    successor_city_id: Optional[int] = None
+    city_name: Optional[str] = None
+
+
+# ============== Work Templates schemas ==============
+
+class WorkTemplateBase(BaseModel):
+    construction_stage_id: Optional[int] = None
+    schedule_type: str
+    work_name: str
+    order_index: int = 0
+    typical_duration: Optional[int] = None
+    can_parallel: bool = False
+    is_active: bool = True
+
+    @validator('schedule_type')
+    def validate_schedule_type(cls, v):
+        allowed = ['document', 'hr', 'procurement', 'construction', 'marketing']
+        if v not in allowed:
+            raise ValueError(f"Недопустимый тип графика: {v}. Разрешены: {allowed}")
+        return v
+
+
+class WorkTemplateCreate(WorkTemplateBase):
+    pass
+
+
+class WorkTemplateUpdate(BaseModel):
+    construction_stage_id: Optional[int] = None
+    schedule_type: Optional[str] = None
+    work_name: Optional[str] = None
+    order_index: Optional[int] = None
+    typical_duration: Optional[int] = None
+    can_parallel: Optional[bool] = None
+    is_active: Optional[bool] = None
+
+
+class WorkTemplate(WorkTemplateBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class WorkTemplateWithStage(WorkTemplate):
+    """Шаблон работы с информацией об этапе"""
+    construction_stage_name: Optional[str] = None
+
+
+# ============== Work Template Dependencies schemas ==============
+
+class WorkTemplateDependencyBase(BaseModel):
+    predecessor_template_id: int
+    successor_template_id: int
+    link_type: str = "FS"
+    lag_days: int = 0
+
+
+class WorkTemplateDependencyCreate(WorkTemplateDependencyBase):
+    pass
+
+
+class WorkTemplateDependency(WorkTemplateDependencyBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ============== Bulk operations schemas ==============
+
+class BulkDependencyCreate(BaseModel):
+    """Массовое создание зависимостей"""
+    dependencies: List[TaskDependencyCreate]
+
+
+class DependencyGraphResponse(BaseModel):
+    """Ответ с графом зависимостей для визуализации"""
+    nodes: List[dict]  # Задачи
+    edges: List[dict]  # Связи между задачами
+    critical_path: List[int]  # ID задач на критическом пути

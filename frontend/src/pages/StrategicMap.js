@@ -3,16 +3,16 @@ import client from '../api/client';
 import { useToast } from '../context/ToastContext';
 import { useTheme } from '../context/ThemeContext';
 
-// Константы для типов вех и их цветов
+// Константы для типов вех и их цветов (мягкие пастельные оттенки)
 const MILESTONE_TYPES = {
-  'РНС': { color: '#22c55e', bgColor: 'rgba(34, 197, 94, 0.15)', label: 'РНС' },
-  'РНВ': { color: '#14b8a6', bgColor: 'rgba(20, 184, 166, 0.15)', label: 'РНВ' },
-  'Продажа': { color: '#3b82f6', bgColor: 'rgba(59, 130, 246, 0.15)', label: 'Продажа' },
-  'Строительство': { color: '#f59e0b', bgColor: 'rgba(245, 158, 11, 0.15)', label: 'Строит.' },
-  'Проектирование': { color: '#8b5cf6', bgColor: 'rgba(139, 92, 246, 0.15)', label: 'Проект.' },
-  'Согласование': { color: '#ec4899', bgColor: 'rgba(236, 72, 153, 0.15)', label: 'Соглас.' },
-  'Завершение': { color: '#10b981', bgColor: 'rgba(16, 185, 129, 0.2)', label: 'Заверш.' },
-  'Подготовка': { color: '#6366f1', bgColor: 'rgba(99, 102, 241, 0.15)', label: 'Подгот.' },
+  'РНС': { color: '#8bc49a', bgColor: 'rgba(139, 196, 154, 0.15)', label: 'РНС' },
+  'РНВ': { color: '#7ab5ad', bgColor: 'rgba(122, 181, 173, 0.15)', label: 'РНВ' },
+  'Продажа': { color: '#7b9eb8', bgColor: 'rgba(123, 158, 184, 0.15)', label: 'Продажа' },
+  'Строительство': { color: '#d4b896', bgColor: 'rgba(212, 184, 150, 0.15)', label: 'Строит.' },
+  'Проектирование': { color: '#a99bc4', bgColor: 'rgba(169, 155, 196, 0.15)', label: 'Проект.' },
+  'Согласование': { color: '#d4a0b8', bgColor: 'rgba(212, 160, 184, 0.15)', label: 'Соглас.' },
+  'Завершение': { color: '#8bc49a', bgColor: 'rgba(139, 196, 154, 0.2)', label: 'Заверш.' },
+  'Подготовка': { color: '#8b9cc4', bgColor: 'rgba(139, 156, 196, 0.15)', label: 'Подгот.' },
 };
 
 // Константы для статусов проектов
@@ -1040,7 +1040,7 @@ const StrategicMap = () => {
                   cursor: 'pointer', 
                   fontSize: 11, 
                   padding: '6px 10px',
-                  color: '#ef4444',
+                  color: '#d4a0a0',
                   fontWeight: 500,
                   transition: 'all 0.2s'
                 }}
@@ -1194,11 +1194,11 @@ const StrategicMap = () => {
                     fontWeight: project.is_subtotal || project.is_total ? 700 : 500,
                     fontSize: project.is_subtotal ? 14 : 13,
                     color: project.is_subtotal 
-                      ? '#3b82f6' 
+                      ? '#7b9eb8' 
                       : project.is_total 
-                        ? '#22c55e'
+                        ? '#8bc49a'
                         : 'var(--text-primary)',
-                    borderLeft: project.is_subtotal ? '4px solid #3b82f6' : 'none'
+                    borderLeft: project.is_subtotal ? '4px solid #7b9eb8' : 'none'
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       {project.city_id && !project.name.startsWith('  ') && (
@@ -1206,7 +1206,7 @@ const StrategicMap = () => {
                           width: 8, 
                           height: 8, 
                           borderRadius: '50%', 
-                          background: '#22c55e',
+                          background: '#8bc49a',
                           flexShrink: 0
                         }} title="Привязан к объекту" />
                       )}
@@ -1773,7 +1773,7 @@ const StrategicMap = () => {
                 style={{ 
                   flex: 2, 
                   height: 40,
-                  background: '#3b82f6',
+                  background: '#7b9eb8',
                   color: '#fff',
                   border: 'none',
                   borderRadius: 8,
@@ -1782,8 +1782,8 @@ const StrategicMap = () => {
                   fontWeight: 600,
                   transition: 'all 0.2s'
                 }}
-                onMouseEnter={(e) => e.target.style.background = '#2563eb'}
-                onMouseLeave={(e) => e.target.style.background = '#3b82f6'}
+                onMouseEnter={(e) => e.target.style.background = '#5a7d96'}
+                onMouseLeave={(e) => e.target.style.background = '#7b9eb8'}
               >
                 Сохранить
               </button>

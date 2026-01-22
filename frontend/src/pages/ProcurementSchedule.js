@@ -117,6 +117,18 @@ const ProcurementSchedule = () => {
     }
   };
 
+  // Обработчик обновления дат из диаграммы Ганта
+  const handleScheduleUpdate = async (scheduleId, updates) => {
+    try {
+      await client.put(`/schedules/${scheduleId}`, updates);
+      showSuccess('Даты обновлены');
+      fetchSchedules();
+    } catch (error) {
+      console.error('Error updating schedule:', error);
+      showError('Ошибка при обновлении дат');
+    }
+  };
+
   const handleCityChange = (cityId) => {
     setSelectedCity(cityId);
     saveSelectedCity(cityId);
@@ -457,7 +469,7 @@ const ProcurementSchedule = () => {
 
       {showCalendar ? (
         <div className="card-full-width">
-          <ModernGanttChart schedules={schedules} cities={cities} selectedView="procurement" />
+          <ModernGanttChart schedules={schedules} cities={cities} selectedView="procurement" onScheduleUpdate={handleScheduleUpdate} />
         </div>
       ) : (
         <>

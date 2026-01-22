@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import ModernGanttChart from '../components/Dashboard/ModernGanttChart';
 import StatusBadge from '../components/StatusBadge';
 import client from '../api/client';
+import { useToast } from '../context/ToastContext';
 
 const DirectiveSchedule = () => {
   const [cities, setCities] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [selectedCity, setSelectedCity] = useState(null);
   const [loading, setLoading] = useState(true);
+  const { showSuccess, showError } = useToast();
 
   useEffect(() => {
     fetchCities();
@@ -41,6 +43,18 @@ const DirectiveSchedule = () => {
     }
   };
 
+  // Обработчик обновления дат из диаграммы Ганта
+  const handleScheduleUpdate = async (scheduleId, updates) => {
+    try {
+      await client.put(`/schedules/${scheduleId}`, updates);
+      showSuccess('Даты обновлены');
+      fetchSchedules();
+    } catch (error) {
+      console.error('Error updating schedule:', error);
+      showError('Ошибка при обновлении дат');
+    }
+  };
+
   return (
     <div className="container-fluid">
       <h1>Директивный агрегированный график</h1>
@@ -67,7 +81,7 @@ const DirectiveSchedule = () => {
             <div>Загрузка данных...</div>
           </div>
         ) : (
-          <ModernGanttChart schedules={schedules} cities={cities} />
+          <ModernGanttChart schedules={schedules} cities={cities} onScheduleUpdate={handleScheduleUpdate} />
         )}
       </div>
     </div>

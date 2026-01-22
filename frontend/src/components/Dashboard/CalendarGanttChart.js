@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import client from '../../api/client';
 
 const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
   // Состояния
@@ -15,6 +16,8 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
   const [arrowPaths, setArrowPaths] = useState([]);
   const [cpmNodes, setCpmNodes] = useState([]);  // Узлы CPM с рассчитанными параметрами
   const [criticalStages, setCriticalStages] = useState([]);  // Список критических этапов
+  const [criticalTaskIds, setCriticalTaskIds] = useState([]);  // ID критических задач
+  const [dependencies, setDependencies] = useState([]);  // Зависимости с сервера
 
   // ========== АЛГОРИТМ КРИТИЧЕСКОГО ПУТИ (CPM) ==========
   // Реализация по методологии ELMA:
@@ -143,6 +146,37 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     return node ? node.float : null;
   }, []);
 
+  // Загрузка зависимостей и критического пути с сервера
+  const fetchDependencyGraph = useCallback(async () => {
+    try {
+      const response = await client.get('/dependencies/dependency-graph');
+      const { nodes, edges, critical_path } = response.data;
+      
+      setDependencies(edges);
+      setCriticalTaskIds(critical_path || []);
+      
+      // Преобразуем данные для отображения
+      const criticalStagesSet = new Set();
+      nodes.forEach(node => {
+        if (critical_path.includes(node.id)) {
+          criticalStagesSet.add(node.stage);
+        }
+      });
+      
+      setCriticalStages(Array.from(criticalStagesSet));
+      setCpmNodes(nodes);
+      
+      return { nodes, criticalStages: Array.from(criticalStagesSet), criticalTaskIds: critical_path };
+    } catch (error) {
+      console.error('Ошибка загрузки графа зависимостей:', error);
+      // Fallback на локальный расчёт
+      const nodes = calculateCriticalPath(processedData);
+      setCpmNodes(nodes);
+      setCriticalStages(getCriticalStages(nodes));
+      return { nodes, criticalStages: getCriticalStages(nodes), criticalTaskIds: [] };
+    }
+  }, [processedData, calculateCriticalPath, getCriticalStages]);
+
   // Названия отделов для разных типов
   const typeNames = {
     document: 'Выдача документации',
@@ -152,13 +186,13 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     marketing: 'Маркетинг и продажи'
   };
 
-  // Цвета для разных типов отделов
+  // Цвета для разных типов отделов (мягкие пастельные оттенки)
   const typeColors = {
-    document: '#6B9BD1',
-    hr: '#6BC788', 
-    procurement: '#D4A76A',
-    construction: '#D97B7B',
-    marketing: '#9B6BD1'
+    document: '#7b9eb8',
+    hr: '#a99bc4', 
+    procurement: '#d4b896',
+    construction: '#8bc49a',
+    marketing: '#d4a0b8'
   };
 
   // Функции-хелперы
@@ -330,11 +364,20 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     setArrowPaths(paths);
   }, [showCriticalPath, criticalPathData, processedData, decades, isPeriodInDecade]);
 
+  // useEffect для загрузки критического пути с сервера
+  useEffect(() => {
+    if (showCriticalPath && processedData.length > 0) {
+      // Загружаем данные с сервера
+      fetchDependencyGraph();
+    }
+  }, [showCriticalPath, processedData, fetchDependencyGraph]);
+
   // useEffect для анализа критического пути
   useEffect(() => {
     if (showCriticalPath && processedData.length > 0) {
+      // Определяем критические задачи по ID или по этапам
       const criticalData = processedData.filter(item => 
-        criticalStages.includes(item.constructionStage)
+        criticalTaskIds.includes(item.id) || criticalStages.includes(item.constructionStage)
       );
 
       // Сортируем по порядку критических этапов
@@ -374,7 +417,7 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
         setDelayInfo(null);
       }
     }
-  }, [showCriticalPath, processedData]);
+  }, [showCriticalPath, processedData, criticalStages, criticalTaskIds]);
 
   // useEffect для обновления стрелок
   useEffect(() => {
@@ -507,11 +550,13 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
     
     setProcessedData(sorted);
 
-    // Вычисляем критический путь при изменении данных
-    const nodes = calculateCriticalPath(sorted);
-    setCpmNodes(nodes);
-    setCriticalStages(getCriticalStages(nodes));
-  }, [schedules, cities, viewMode, sortBy, calculateCriticalPath, getCriticalStages]);
+    // Локальный расчёт критического пути (fallback если нет данных с сервера)
+    if (!showCriticalPath) {
+      const nodes = calculateCriticalPath(sorted);
+      setCpmNodes(nodes);
+      setCriticalStages(getCriticalStages(nodes));
+    }
+  }, [schedules, cities, viewMode, sortBy, calculateCriticalPath, getCriticalStages, showCriticalPath]);
 
   // useEffect для ResizeObserver
   useEffect(() => {
@@ -597,7 +642,7 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
         </div>
 
         {/* Информация о критическом пути (CPM) */}
-        {showCriticalPath && cpmNodes.length > 0 && (
+        {showCriticalPath && (cpmNodes.length > 0 || criticalTaskIds.length > 0) && (
           <div style={{
             marginTop: '15px',
             padding: '15px',
@@ -605,26 +650,47 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
             borderRadius: '8px',
             border: '2px solid #2196f3'
           }}>
-            <div style={{ fontWeight: 'bold', color: '#1565c0', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '20px' }}>📊</span>
-              Анализ критического пути (метод CPM)
+            <div style={{ fontWeight: 'bold', color: '#1565c0', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '20px' }}>📊</span>
+                Анализ критического пути (метод CPM)
+              </div>
+              <a 
+                href="/dependency-manager" 
+                style={{ 
+                  color: '#1565c0', 
+                  textDecoration: 'none', 
+                  fontSize: '13px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                🔗 Настроить связи
+              </a>
             </div>
             <div style={{ display: 'flex', gap: '30px', flexWrap: 'wrap' }}>
+              {cpmNodes.length > 0 && (
+                <div>
+                  <span style={{ color: '#666' }}>Общая длительность проекта:</span>{' '}
+                  <strong>{Math.max(...cpmNodes.map(n => n.EF || 0))} дней</strong>
+                </div>
+              )}
               <div>
-                <span style={{ color: '#666' }}>Общая длительность проекта:</span>{' '}
-                <strong>{Math.max(...cpmNodes.map(n => n.EF))} дней</strong>
+                <span style={{ color: '#666' }}>Критических задач:</span>{' '}
+                <strong style={{ color: '#ff6b6b' }}>
+                  {criticalTaskIds.length || criticalStages.length}
+                </strong> из {processedData.length}
               </div>
-              <div>
-                <span style={{ color: '#666' }}>Критических этапов:</span>{' '}
-                <strong style={{ color: '#ff6b6b' }}>{criticalStages.length}</strong> из {cpmNodes.length}
-              </div>
-              <div>
-                <span style={{ color: '#666' }}>Этапов с резервом:</span>{' '}
-                <strong style={{ color: '#4CAF50' }}>{cpmNodes.filter(n => n.float > 0).length}</strong>
-              </div>
+              {cpmNodes.length > 0 && (
+                <div>
+                  <span style={{ color: '#666' }}>Этапов с резервом:</span>{' '}
+                  <strong style={{ color: '#4CAF50' }}>{cpmNodes.filter(n => n.float > 0).length}</strong>
+                </div>
+              )}
             </div>
             <div style={{ marginTop: '10px', fontSize: '12px', color: '#666' }}>
-              <em>Критический путь — последовательность этапов с нулевым резервом времени. Задержка любого критического этапа сдвигает срок завершения всего проекта.</em>
+              <em>Критический путь — последовательность задач с нулевым резервом времени. Задержка любой критической задачи сдвигает срок завершения всего проекта.</em>
             </div>
           </div>
         )}
@@ -936,7 +1002,9 @@ const CalendarGanttChart = ({ schedules, cities, selectedView = null }) => {
           </thead>
           <tbody>
             {processedData.map(task => {
-              const isCritical = showCriticalPath && criticalStages.includes(task.constructionStage);
+              const isCritical = showCriticalPath && (
+                criticalTaskIds.includes(task.id) || criticalStages.includes(task.constructionStage)
+              );
               const stageFloat = getStageFloat(task.constructionStage, cpmNodes);
               const rowOpacity = showCriticalPath ? (isCritical ? 1 : 0.3) : 1;
               const hasDelay = task.actualEnd && task.plannedEnd && task.actualEnd > task.plannedEnd;

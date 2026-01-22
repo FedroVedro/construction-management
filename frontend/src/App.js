@@ -19,6 +19,7 @@ import ProjectOffice from './pages/ProjectOffice';
 import StrategicMap from './pages/StrategicMap';
 import TelegramSettings from './pages/TelegramSettings';
 import ProcessManagement from './pages/ProcessManagement';
+import DependencyManager from './pages/DependencyManager';
 import './App.css';
 
 function App() {
@@ -43,6 +44,7 @@ function App() {
                   <Route path="project-office" element={<ProjectOffice />} />
                   <Route path="strategic-map" element={<StrategicMap />} />
                   <Route path="process-management" element={<ProcessManagement />} />
+                  <Route path="dependency-manager" element={<DependencyManager />} />
                   <Route path="telegram-settings" element={<TelegramSettings />} />
                 </Route>
               </Route>

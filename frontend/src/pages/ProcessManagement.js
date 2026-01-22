@@ -210,7 +210,7 @@ const ProcessManagement = () => {
       gap: '6px'
     },
     primaryButton: {
-      background: '#3b82f6',
+      background: '#7b9eb8',
       color: '#fff'
     },
     secondaryButton: {
@@ -218,7 +218,7 @@ const ProcessManagement = () => {
       color: '#475569'
     },
     dangerButton: {
-      background: '#ef4444',
+      background: '#d4a0a0',
       color: '#fff'
     },
     tableWrapper: {
