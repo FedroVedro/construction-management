@@ -1,7 +1,21 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import client from '../api/client';
 
 const AuthContext = createContext(null);
+
+// Безопасный парсинг JSON из localStorage (защита от crash при corrupted data)
+const safeJsonParse = (key) => {
+  try {
+    const item = localStorage.getItem(key);
+    if (!item) return null;
+    return JSON.parse(item);
+  } catch (error) {
+    console.error(`Error parsing ${key} from localStorage:`, error);
+    // Очищаем повреждённые данные
+    localStorage.removeItem(key);
+    return null;
+  }
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -9,40 +23,51 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    const userData = localStorage.getItem('user');
+    const userData = safeJsonParse('user');
     
     if (token && userData) {
-      setUser(JSON.parse(userData));
+      setUser(userData);
+    } else if (token && !userData) {
+      // Токен есть, но данные пользователя повреждены - очищаем всё
+      localStorage.removeItem('token');
     }
     setLoading(false);
   }, []);
 
-  const login = async (username, password) => {
+  const login = useCallback(async (username, password) => {
     const formData = new FormData();
     formData.append('username', username);
     formData.append('password', password);
 
-    const response = await client.post('/auth/login', formData);
-    const { access_token, user } = response.data;
-    
-    localStorage.setItem('token', access_token);
-    localStorage.setItem('user', JSON.stringify(user));
-    setUser(user);
-    
-    return response.data;
-  };
+    try {
+      const response = await client.post('/auth/login', formData);
+      const { access_token, user: userData } = response.data;
+      
+      localStorage.setItem('token', access_token);
+      localStorage.setItem('user', JSON.stringify(userData));
+      setUser(userData);
+      
+      return response.data;
+    } catch (error) {
+      // Очищаем старые данные при ошибке логина
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      throw error;
+    }
+  }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setUser(null);
-  };
+  }, []);
 
   const value = {
     user,
     login,
     logout,
     loading,
+    isAuthenticated: !!user,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import MasterCard from '../components/Dashboard/MasterCard';
 import ModernGanttChart from '../components/Dashboard/ModernGanttChart';
 import client from '../api/client';
@@ -39,12 +40,26 @@ const Home = () => {
   };
 
   const handleScheduleUpdate = async (scheduleId, updates) => {
+    // Сохраняем старое состояние для отката в случае ошибки
+    const previousSchedules = [...schedules];
+    
+    // Оптимистично обновляем UI сразу (без перезагрузки)
+    setSchedules(prevSchedules => 
+      prevSchedules.map(schedule => 
+        schedule.id === scheduleId 
+          ? { ...schedule, ...updates }
+          : schedule
+      )
+    );
+    
+    // Синхронизируем с сервером в фоне
     try {
       await client.put(`/schedules/${scheduleId}`, updates);
-      showSuccess('Даты обновлены');
-      fetchSchedules();
+      // Успешно сохранено - ничего не делаем, UI уже обновлён
     } catch (error) {
       console.error('Error updating schedule:', error);
+      // Откатываем изменения при ошибке
+      setSchedules(previousSchedules);
       showError('Ошибка при обновлении дат');
     }
   };
@@ -157,10 +172,12 @@ const Home = () => {
   );
 };
 
-// Компонент быстрой ссылки
+// Компонент быстрой ссылки (использует React Router для навигации без перезагрузки)
 const QuickLink = ({ to, icon, text, shortcut }) => {
+  const navigate = useNavigate();
+  
   const handleClick = () => {
-    window.location.href = to;
+    navigate(to);
   };
 
   return (
@@ -180,18 +197,18 @@ const QuickLink = ({ to, icon, text, shortcut }) => {
         fontSize: '14px'
       }}
       onMouseEnter={(e) => {
-        e.target.style.backgroundColor = 'var(--table-hover)';
-        e.target.style.borderColor = '#007bff';
-        e.target.style.transform = 'translateY(-2px)';
+        e.currentTarget.style.backgroundColor = 'var(--table-hover)';
+        e.currentTarget.style.borderColor = '#007bff';
+        e.currentTarget.style.transform = 'translateY(-2px)';
       }}
       onMouseLeave={(e) => {
-        e.target.style.backgroundColor = 'var(--bg-secondary)';
-        e.target.style.borderColor = 'var(--border-color)';
-        e.target.style.transform = 'translateY(0)';
+        e.currentTarget.style.backgroundColor = 'var(--bg-secondary)';
+        e.currentTarget.style.borderColor = 'var(--border-color)';
+        e.currentTarget.style.transform = 'translateY(0)';
       }}
     >
-      <span style={{ fontSize: '18px' }}>{icon}</span>
-      <span>{text}</span>
+      <span style={{ fontSize: '18px', pointerEvents: 'none' }}>{icon}</span>
+      <span style={{ pointerEvents: 'none' }}>{text}</span>
       {shortcut && (
         <kbd style={{
           backgroundColor: 'var(--bg-card)',
@@ -201,7 +218,8 @@ const QuickLink = ({ to, icon, text, shortcut }) => {
           fontSize: '10px',
           fontFamily: 'monospace',
           marginLeft: '4px',
-          color: 'var(--text-muted)'
+          color: 'var(--text-muted)',
+          pointerEvents: 'none'
         }}>
           {shortcut}
         </kbd>

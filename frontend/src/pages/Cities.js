@@ -6,6 +6,8 @@ const Cities = () => {
   const [cities, setCities] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editingCity, setEditingCity] = useState(null);
+  const [submitting, setSubmitting] = useState(false); // Защита от двойного клика
+  const [deleting, setDeleting] = useState(null); // ID удаляемого города
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -29,6 +31,9 @@ const Cities = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting) return; // Предотвращаем двойной клик
+    
+    setSubmitting(true);
     try {
       if (editingCity) {
         await client.put(`/cities/${editingCity.id}`, formData);
@@ -42,6 +47,8 @@ const Cities = () => {
     } catch (error) {
       console.error('Error saving city:', error);
       showError('Ошибка при сохранении объекта строительства');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -56,7 +63,10 @@ const Cities = () => {
   };
 
   const handleDelete = async (cityId) => {
+    if (deleting) return; // Предотвращаем множественные клики
+    
     if (window.confirm('Вы уверены, что хотите удалить этот объект строительства?')) {
+      setDeleting(cityId);
       try {
         await client.delete(`/cities/${cityId}`);
         showSuccess('Объект строительства удалён');
@@ -64,6 +74,8 @@ const Cities = () => {
       } catch (error) {
         console.error('Error deleting city:', error);
         showError('Ошибка при удалении объекта строительства');
+      } finally {
+        setDeleting(null);
       }
     }
   };
@@ -159,10 +171,20 @@ const Cities = () => {
               </small>
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button type="submit" className="btn btn-primary">
-                {editingCity ? 'Обновить' : 'Создать'}
+              <button 
+                type="submit" 
+                className="btn btn-primary"
+                disabled={submitting}
+                style={{ opacity: submitting ? 0.7 : 1 }}
+              >
+                {submitting ? '⏳ Сохранение...' : (editingCity ? 'Обновить' : 'Создать')}
               </button>
-              <button type="button" className="btn btn-secondary" onClick={resetForm}>
+              <button 
+                type="button" 
+                className="btn btn-secondary" 
+                onClick={resetForm}
+                disabled={submitting}
+              >
                 Отмена
               </button>
             </div>
@@ -245,8 +267,10 @@ const Cities = () => {
                     <button 
                       className="btn btn-danger btn-sm" 
                       onClick={() => handleDelete(city.id)}
+                      disabled={deleting === city.id}
+                      style={{ opacity: deleting === city.id ? 0.7 : 1 }}
                     >
-                      🗑️ Удалить
+                      {deleting === city.id ? '⏳ Удаление...' : '🗑️ Удалить'}
                     </button>
                   </td>
                 </tr>

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import ModernGanttChart from '../components/Dashboard/ModernGanttChart';
-import StatusBadge from '../components/StatusBadge';
 import client from '../api/client';
 import { useToast } from '../context/ToastContext';
 
@@ -43,14 +42,28 @@ const DirectiveSchedule = () => {
     }
   };
 
-  // Обработчик обновления дат из диаграммы Ганта
+  // Обработчик обновления дат из диаграммы Ганта (с оптимистичным UI)
   const handleScheduleUpdate = async (scheduleId, updates) => {
+    // Сохраняем старое состояние для отката в случае ошибки
+    const previousSchedules = [...schedules];
+    
+    // Оптимистично обновляем UI сразу (без перезагрузки)
+    setSchedules(prevSchedules => 
+      prevSchedules.map(schedule => 
+        schedule.id === scheduleId 
+          ? { ...schedule, ...updates }
+          : schedule
+      )
+    );
+    
+    // Синхронизируем с сервером в фоне
     try {
       await client.put(`/schedules/${scheduleId}`, updates);
-      showSuccess('Даты обновлены');
-      fetchSchedules();
+      // Успешно сохранено - ничего не делаем, UI уже обновлён
     } catch (error) {
       console.error('Error updating schedule:', error);
+      // Откатываем изменения при ошибке
+      setSchedules(previousSchedules);
       showError('Ошибка при обновлении дат');
     }
   };

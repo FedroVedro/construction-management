@@ -44,7 +44,7 @@ const MasterCard = ({ cityId }) => {
     };
     
     fetchData();
-  }, [cityId]);
+  }, [cityId, showError]);
 
   useEffect(() => {
     fetchStages();

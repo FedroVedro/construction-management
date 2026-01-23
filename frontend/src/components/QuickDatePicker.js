@@ -22,12 +22,24 @@ const QuickDatePicker = ({
   
   const quickDates = getQuickDates();
 
-  // Открыть календарь браузера
+  // Открыть календарь браузера (с проверкой поддержки showPicker)
   const openCalendar = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation();
     if (inputRef.current) {
-      inputRef.current.showPicker();
+      // Проверяем поддержку showPicker (не поддерживается в Safari и старых браузерах)
+      if (typeof inputRef.current.showPicker === 'function') {
+        try {
+          inputRef.current.showPicker();
+        } catch (err) {
+          // Fallback: фокусируемся на input
+          inputRef.current.focus();
+        }
+      } else {
+        // Fallback для браузеров без showPicker
+        inputRef.current.focus();
+        inputRef.current.click();
+      }
     }
   }, []);
 

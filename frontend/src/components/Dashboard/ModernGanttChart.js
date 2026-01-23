@@ -13,12 +13,15 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
   const [resizing, setResizing] = useState(null);
   const [hoveredTask, setHoveredTask] = useState(null);
   const [sortBy, setSortBy] = useState('date'); // date, name, stage, type, city
+  const [isSyncing, setIsSyncing] = useState(false); // Индикатор синхронизации
   
   const sidebarRef = useRef(null);
   const timelineBodyRef = useRef(null);
   const timelineHeaderRef = useRef(null);
   const rafRef = useRef(null); // Для requestAnimationFrame
   const pendingUpdateRef = useRef(null); // Для хранения отложенного обновления
+  const saveTimeoutRef = useRef(null); // БАГ-ФИХ: Для дебаунсинга сохранения
+  const pendingSaveRef = useRef(null); // БАГ-ФИХ: Хранит последние данные для сохранения
 
   // Константы
   const ROW_HEIGHT = 50;
@@ -238,6 +241,12 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
   useEffect(() => {
     if (!schedules || schedules.length === 0) return;
 
+    // БАГ-ФИХ: Не обновляем tasks если идёт перетаскивание
+    // Это предотвращает потерю изменений при обновлении schedules извне
+    if (dragging || resizing) {
+      return;
+    }
+
     const processed = schedules
       .filter(s => viewMode === 'all' || s.schedule_type === viewMode)
       .map(schedule => {
@@ -257,7 +266,7 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
       });
 
     setTasks(sortTasks(processed, sortBy));
-  }, [schedules, cities, viewMode, sortBy, sortTasks]);
+  }, [schedules, cities, viewMode, sortBy, sortTasks, dragging, resizing]);
 
   // Загрузка критического пути при включении режима
   useEffect(() => {
@@ -297,11 +306,15 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
   // Drag handlers - используем ref для хранения состояния перетаскивания
   const dragStateRef = useRef(null);
   const resizeStateRef = useRef(null);
+  const originalTaskRef = useRef(null); // БАГ-ФИХ: Сохраняем оригинальную задачу
   
   const handleMouseDown = (e, task, action) => {
     e.preventDefault();
     e.stopPropagation();
     const startX = e.clientX;
+    
+    // БАГ-ФИХ: Сохраняем полную копию задачи для отката
+    originalTaskRef.current = { ...task };
     
     // Используем фактические даты если есть, иначе плановые
     const currentStart = task.actualStart || task.plannedStart;
@@ -311,12 +324,16 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     const originalStartTime = currentStart.getTime();
     const originalEndTime = currentEnd.getTime();
     
+    // БАГ-ФИХ: Сохраняем был ли у задачи actualStart/actualEnd до перемещения
+    const hadActualDates = !!(task.actualStart && task.actualEnd);
+    
     if (action === 'move') {
       const state = { 
         taskId: task.id, 
         startX, 
         originalStartTime,
         originalEndTime,
+        hadActualDates,
         lastDaysDelta: 0
       };
       dragStateRef.current = state;
@@ -328,6 +345,7 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
         action, 
         originalStartTime,
         originalEndTime,
+        hadActualDates,
         lastDaysDelta: 0
       };
       resizeStateRef.current = state;
@@ -368,9 +386,13 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
           const newStart = new Date(ds.originalStartTime + delta * 24 * 60 * 60 * 1000);
           const newEnd = new Date(ds.originalEndTime + delta * 24 * 60 * 60 * 1000);
           
-          // Обновляем ФАКТИЧЕСКИЕ даты
+          // БАГ-ФИХ: Обновляем ФАКТИЧЕСКИЕ даты (создаём их если не было)
           setTasks(prev => prev.map(t => 
-            t.id === ds.taskId ? { ...t, actualStart: newStart, actualEnd: newEnd } : t
+            t.id === ds.taskId ? { 
+              ...t, 
+              actualStart: newStart, 
+              actualEnd: newEnd 
+            } : t
           ));
         }
         
@@ -380,20 +402,34 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
             const originalStart = new Date(rs.originalStartTime);
             
             if (newEnd > originalStart) {
-              // Обновляем ФАКТИЧЕСКУЮ дату окончания
-              setTasks(prev => prev.map(t => 
-                t.id === rs.taskId ? { ...t, actualEnd: newEnd } : t
-              ));
+              // БАГ-ФИХ: При resize создаём обе даты если их не было
+              setTasks(prev => prev.map(t => {
+                if (t.id === rs.taskId) {
+                  return {
+                    ...t,
+                    actualStart: t.actualStart || originalStart,
+                    actualEnd: newEnd
+                  };
+                }
+                return t;
+              }));
             }
           } else {
             const newStart = new Date(rs.originalStartTime + delta * 24 * 60 * 60 * 1000);
             const originalEnd = new Date(rs.originalEndTime);
             
             if (newStart < originalEnd) {
-              // Обновляем ФАКТИЧЕСКУЮ дату начала
-              setTasks(prev => prev.map(t => 
-                t.id === rs.taskId ? { ...t, actualStart: newStart } : t
-              ));
+              // БАГ-ФИХ: При resize создаём обе даты если их не было
+              setTasks(prev => prev.map(t => {
+                if (t.id === rs.taskId) {
+                  return {
+                    ...t,
+                    actualStart: newStart,
+                    actualEnd: t.actualEnd || originalEnd
+                  };
+                }
+                return t;
+              }));
             }
           }
         }
@@ -404,32 +440,77 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
   const handleMouseUp = useCallback(async () => {
     const dragState = dragStateRef.current;
     const resizeState = resizeStateRef.current;
+    const originalTask = originalTaskRef.current;
     
     if (dragState || resizeState) {
       const taskId = dragState?.taskId || resizeState?.taskId;
-      const updated = tasks.find(t => t.id === taskId);
       
-      if (updated && updated.actualStart && updated.actualEnd) {
-        try {
-          // Отправляем ФАКТИЧЕСКИЕ даты на сервер
-          if (onScheduleUpdate) {
-            await onScheduleUpdate(updated.id, {
+      // БАГ-ФИХ: Используем функциональное обновление для получения актуального состояния
+      setTasks(currentTasks => {
+        const updated = currentTasks.find(t => t.id === taskId);
+        
+        // БАГ-ФИХ: Проверяем что задача существует и даты валидны
+        if (updated && updated.actualStart && updated.actualEnd) {
+          // БАГ-ФИХ: Сохраняем данные для отложенного сохранения
+          pendingSaveRef.current = {
+            taskId: updated.id,
+            updates: {
               actual_start_date: updated.actualStart.toISOString(),
               actual_end_date: updated.actualEnd.toISOString()
-            });
+            },
+            originalTask
+          };
+          
+          // Показываем индикатор синхронизации
+          setIsSyncing(true);
+          
+          // БАГ-ФИХ: Дебаунсинг сохранения (100мс после последнего mouseUp)
+          if (saveTimeoutRef.current) {
+            clearTimeout(saveTimeoutRef.current);
           }
-        } catch (error) {
-          console.error('Ошибка обновления фактических дат:', error);
+          
+          saveTimeoutRef.current = setTimeout(() => {
+            const saveData = pendingSaveRef.current;
+            if (saveData && onScheduleUpdate) {
+              onScheduleUpdate(saveData.taskId, saveData.updates)
+                .then(() => {
+                  // Скрываем индикатор после успешного сохранения
+                  setTimeout(() => setIsSyncing(false), 300);
+                  pendingSaveRef.current = null;
+                })
+                .catch(error => {
+                  console.error('Ошибка обновления фактических дат:', error);
+                  setIsSyncing(false);
+                  
+                  // БАГ-ФИХ: Откатываем изменения при ошибке
+                  if (saveData.originalTask) {
+                    setTasks(prev => prev.map(t => 
+                      t.id === saveData.taskId ? saveData.originalTask : t
+                    ));
+                  }
+                  pendingSaveRef.current = null;
+                });
+            }
+          }, 100); // 100мс дебаунс
+        } else {
+          console.warn('Задача не найдена или даты невалидны, отменяем сохранение');
+          setIsSyncing(false);
         }
-      }
+        
+        return currentTasks; // Возвращаем текущее состояние
+      });
       
-      // Обновляем критический путь после изменения дат
+      // Обновляем критический путь в фоне (без ожидания), тоже с дебаунсом
       if (showCriticalPath) {
-        fetchDependencyGraph().then(data => setCpmData(data));
+        setTimeout(() => {
+          fetchDependencyGraph()
+            .then(data => setCpmData(data))
+            .catch(err => console.error('Ошибка обновления критического пути:', err));
+        }, 150);
       }
     }
     
-    // Очищаем refs и state
+    // Очищаем refs и state сразу для плавности
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -437,9 +518,10 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     pendingUpdateRef.current = null;
     dragStateRef.current = null;
     resizeStateRef.current = null;
+    originalTaskRef.current = null;
     setDragging(null);
     setResizing(null);
-  }, [tasks, onScheduleUpdate, showCriticalPath, fetchDependencyGraph]);
+  }, [onScheduleUpdate, showCriticalPath, fetchDependencyGraph]);
 
   useEffect(() => {
     if (dragging || resizing) {
@@ -448,6 +530,16 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
       return () => {
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseup', handleMouseUp);
+        
+        // БАГ-ФИХ: Очищаем все таймеры и анимации при размонтировании
+        if (rafRef.current) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+          saveTimeoutRef.current = null;
+        }
       };
     }
   }, [dragging, resizing, handleMouseMove, handleMouseUp]);
@@ -549,7 +641,8 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
             background: 'repeating-linear-gradient(45deg, #e2e8f0, #e2e8f0 4px, #f1f5f9 4px, #f1f5f9 8px)',
             borderRadius: '4px',
             border: '1px dashed #94a3b8',
-            opacity: hasActualDates ? 0.6 : 0
+            opacity: hasActualDates ? 0.6 : 0,
+            transition: dragging || resizing ? 'none' : 'opacity 0.3s ease'
           }}
         />
         
@@ -565,7 +658,8 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
             border: critical ? '2px solid #fff' : `1px solid ${borderColor}`,
             boxShadow: isHovered ? '0 4px 12px rgba(0,0,0,0.3)' : '0 1px 3px rgba(0,0,0,0.2)',
             cursor: dragging || resizing ? 'grabbing' : 'grab',
-            transition: 'box-shadow 0.2s'
+            transition: dragging || resizing ? 'none' : 'box-shadow 0.2s ease, opacity 0.2s ease',
+            willChange: dragging || resizing ? 'transform' : 'auto'
           }}
           onMouseDown={(e) => handleMouseDown(e, task, 'move')}
         >
@@ -1544,12 +1638,53 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
         color: '#64748b',
         background: '#f1f5f9',
         borderRadius: '6px',
-        borderLeft: '4px solid #3B82F6'
+        borderLeft: '4px solid #3B82F6',
+        position: 'relative'
       }}>
         💡 <strong>Подсказка:</strong> Перетаскивайте бары для изменения фактических дат. 
         Штриховка — плановые даты. Стрелки показывают зависимости между задачами. 
         <span style={{ color: '#DC2626', fontWeight: '600' }}>Красные связи</span> — критический путь проекта.
+        
+        {/* Ненавязчивый индикатор синхронизации */}
+        {isSyncing && (
+          <div style={{
+            position: 'absolute',
+            top: '50%',
+            right: '14px',
+            transform: 'translateY(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '6px 12px',
+            background: 'rgba(59, 130, 246, 0.1)',
+            borderRadius: '20px',
+            fontSize: '11px',
+            color: '#3B82F6',
+            fontWeight: '600',
+            animation: 'fadeIn 0.2s ease-in'
+          }}>
+            <div style={{
+              width: '12px',
+              height: '12px',
+              border: '2px solid #3B82F6',
+              borderTopColor: 'transparent',
+              borderRadius: '50%',
+              animation: 'spin 0.8s linear infinite'
+            }} />
+            Сохранение...
+          </div>
+        )}
       </div>
+      
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(-50%) scale(0.9); }
+          to { opacity: 1; transform: translateY(-50%) scale(1); }
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 };
