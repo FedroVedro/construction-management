@@ -42,18 +42,24 @@ export const parseLastDate = (dateString) => {
 };
 
 /**
- * Форматирует дату для отображения
- * @param {Date} date - Дата для форматирования
- * @returns {string} - Отформатированная дата
+ * Форматирует дату для отображения в формате DD/MM/YYYY
+ * @param {Date|string} date - Дата для форматирования (Date объект или ISO строка)
+ * @returns {string} - Отформатированная дата в формате DD/MM/YYYY
  */
 export const formatDate = (date) => {
   if (!date) return '';
   
-  return date.toLocaleDateString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  });
+  // Если передана строка, преобразуем в Date
+  const dateObj = typeof date === 'string' ? new Date(date) : date;
+  
+  // Проверяем валидность даты
+  if (isNaN(dateObj.getTime())) return '';
+  
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const year = dateObj.getFullYear();
+  
+  return `${day}/${month}/${year}`;
 };
 
 /**

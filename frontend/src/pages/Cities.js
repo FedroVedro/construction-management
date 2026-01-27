@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import client from '../api/client';
 import { useToast } from '../context/ToastContext';
+import { formatDate } from '../utils/dateParser';
 
 const Cities = () => {
   const [cities, setCities] = useState([]);
@@ -255,7 +256,7 @@ const Cities = () => {
                       {city.visible_in_schedules ? '✓ Отображается' : '✕ Скрыт'}
                     </button>
                   </td>
-                  <td>{new Date(city.created_at).toLocaleDateString()}</td>
+                  <td>{formatDate(new Date(city.created_at))}</td>
                   <td>
                     <button 
                       className="btn btn-secondary btn-sm" 

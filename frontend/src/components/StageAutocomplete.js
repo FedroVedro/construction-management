@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
-import client from '../api/client';
 
-const StageAutocomplete = ({ value, onChange, onBlur, autoFocus = false }) => {
+const StageAutocomplete = ({ value, onChange, onBlur, autoFocus = false, stages = [] }) => {
   const [inputValue, setInputValue] = useState(value || '');
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
-  const [allStages, setAllStages] = useState([]);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
   const inputRef = useRef(null);
   const wrapperRef = useRef(null);
@@ -15,18 +13,8 @@ const StageAutocomplete = ({ value, onChange, onBlur, autoFocus = false }) => {
   const isMouseDownOnDropdown = useRef(false);
   const hasSelectedStage = useRef(false);
 
-  // Загружаем все этапы при монтировании компонента
-  useEffect(() => {
-    const fetchStages = async () => {
-      try {
-        const response = await client.get('/construction-stages?active_only=true');
-        setAllStages(response.data);
-      } catch (error) {
-        console.error('Error fetching stages:', error);
-      }
-    };
-    fetchStages();
-  }, []);
+  // Используем stages из props - НЕ загружаем каждый раз!
+  const allStages = stages;
 
   // Устанавливаем начальное значение
   useEffect(() => {

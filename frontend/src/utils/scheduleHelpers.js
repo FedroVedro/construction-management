@@ -1,5 +1,6 @@
 // Утилиты для работы с графиками
 import * as XLSX from 'xlsx';
+import { formatDate } from './dateParser';
 
 /**
  * Форматирование даты для input[type="date"]
@@ -12,17 +13,10 @@ export const formatDateForInput = (date) => {
 };
 
 /**
- * Форматирование даты для отображения
+ * Форматирование даты для отображения в формате DD/MM/YYYY
  */
 export const formatDateDisplay = (date) => {
-  if (!date) return '';
-  const d = new Date(date);
-  if (isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  });
+  return formatDate(date);
 };
 
 /**

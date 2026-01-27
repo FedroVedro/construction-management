@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import client from '../../api/client';
+import { formatDate as formatDateUtil } from '../../utils/dateParser';
 
 const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUpdate }) => {
   const [tasks, setTasks] = useState([]);
@@ -13,15 +14,15 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
   const [resizing, setResizing] = useState(null);
   const [hoveredTask, setHoveredTask] = useState(null);
   const [sortBy, setSortBy] = useState('date'); // date, name, stage, type, city
-  const [isSyncing, setIsSyncing] = useState(false); // Индикатор синхронизации
+  const [syncCount, setSyncCount] = useState(0); // Счётчик активных операций синхронизации
+  const isSyncing = syncCount > 0; // Индикатор синхронизации (вычисляемое значение)
+  const [yearFilter, setYearFilter] = useState('all'); // Фильтр по году
   
   const sidebarRef = useRef(null);
   const timelineBodyRef = useRef(null);
   const timelineHeaderRef = useRef(null);
   const rafRef = useRef(null); // Для requestAnimationFrame
   const pendingUpdateRef = useRef(null); // Для хранения отложенного обновления
-  const saveTimeoutRef = useRef(null); // БАГ-ФИХ: Для дебаунсинга сохранения
-  const pendingSaveRef = useRef(null); // БАГ-ФИХ: Хранит последние данные для сохранения
 
   // Константы
   const ROW_HEIGHT = 50;
@@ -48,14 +49,17 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
   };
 
   // Форматирование даты
+  // Используем утилиту форматирования дат (DD/MM/YYYY)
   const formatDate = (date) => {
     if (!date) return '';
-    return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+    return formatDateUtil(date);
   };
 
   const formatDateShort = (date) => {
     if (!date) return '';
-    return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+    const formatted = formatDateUtil(date);
+    // Возвращаем только DD/MM (без года)
+    return formatted.substring(0, 5);
   };
 
   // Синхронизация скролла
@@ -83,19 +87,58 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     }
   };
 
+  // Доступные годы из задач
+  const availableYears = useMemo(() => {
+    if (tasks.length === 0) return [];
+    const years = new Set();
+    tasks.forEach(task => {
+      if (task.plannedStart) years.add(task.plannedStart.getFullYear());
+      if (task.plannedEnd) years.add(task.plannedEnd.getFullYear());
+      if (task.actualStart) years.add(task.actualStart.getFullYear());
+      if (task.actualEnd) years.add(task.actualEnd.getFullYear());
+    });
+    return Array.from(years).sort((a, b) => a - b);
+  }, [tasks]);
+
+  // Фильтруем задачи по году
+  const filteredTasks = useMemo(() => {
+    if (yearFilter === 'all') return tasks;
+    const year = parseInt(yearFilter);
+    return tasks.filter(task => {
+      // Показываем задачу если хотя бы одна из её дат попадает в выбранный год
+      const startYear = task.plannedStart?.getFullYear();
+      const endYear = task.plannedEnd?.getFullYear();
+      const actualStartYear = task.actualStart?.getFullYear();
+      const actualEndYear = task.actualEnd?.getFullYear();
+      
+      return startYear === year || endYear === year || 
+             actualStartYear === year || actualEndYear === year ||
+             (startYear && endYear && startYear <= year && endYear >= year);
+    });
+  }, [tasks, yearFilter]);
+
   // Временной диапазон
   const timeRange = useMemo(() => {
-    if (tasks.length === 0) return { start: new Date(), end: new Date(), days: 0 };
+    if (filteredTasks.length === 0) return { start: new Date(), end: new Date(), days: 0 };
     
-    let minDate = new Date(Math.min(...tasks.map(t => t.plannedStart.getTime())));
-    let maxDate = new Date(Math.max(...tasks.map(t => t.plannedEnd.getTime())));
+    let minDate = new Date(Math.min(...filteredTasks.map(t => t.plannedStart.getTime())));
+    let maxDate = new Date(Math.max(...filteredTasks.map(t => t.plannedEnd.getTime())));
+    
+    // Если фильтр по году активен, ограничиваем диапазон этим годом
+    if (yearFilter !== 'all') {
+      const year = parseInt(yearFilter);
+      const yearStart = new Date(year, 0, 1);
+      const yearEnd = new Date(year, 11, 31);
+      minDate = minDate < yearStart ? yearStart : minDate;
+      maxDate = maxDate > yearEnd ? yearEnd : maxDate;
+    }
     
     minDate = new Date(minDate.getFullYear(), minDate.getMonth() - 1, 1);
     maxDate = new Date(maxDate.getFullYear(), maxDate.getMonth() + 2, 0);
     
     const days = Math.ceil((maxDate - minDate) / (1000 * 60 * 60 * 24));
     return { start: minDate, end: maxDate, days };
-  }, [tasks]);
+  }, [filteredTasks, yearFilter]);
 
   // Заголовки месяцев
   const monthHeaders = useMemo(() => {
@@ -122,36 +165,7 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     return headers;
   }, [timeRange, DAY_WIDTH]);
 
-  // Загрузка зависимостей и расчёт критического пути с сервера
-  const fetchDependencyGraph = useCallback(async () => {
-    try {
-      const response = await client.get('/dependencies/dependency-graph');
-      const { nodes, edges, critical_path } = response.data;
-      
-      setDependencies(edges);
-      
-      // Преобразуем данные для отображения
-      const criticalStages = new Set();
-      nodes.forEach(node => {
-        if (critical_path.includes(node.id)) {
-          criticalStages.add(node.stage);
-        }
-      });
-      
-      return {
-        nodes,
-        edges,  // Добавляем edges для отрисовки связей
-        criticalStages: Array.from(criticalStages),
-        criticalTaskIds: critical_path
-      };
-    } catch (error) {
-      console.error('Ошибка загрузки графа зависимостей:', error);
-      // Fallback на локальный расчёт если API недоступно
-      return calculateCPMLocal(tasks);
-    }
-  }, [tasks]);
-
-  // Локальный CPM алгоритм (fallback)
+  // Локальный CPM алгоритм (fallback) - должен быть определён ДО fetchDependencyGraph
   const calculateCPMLocal = useCallback((taskList) => {
     if (taskList.length === 0) return { nodes: [], edges: [], criticalStages: [], criticalTaskIds: [] };
 
@@ -210,6 +224,35 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     return { nodes, edges: [], criticalStages, criticalTaskIds };
   }, []);
 
+  // Загрузка зависимостей и расчёт критического пути с сервера
+  const fetchDependencyGraph = useCallback(async () => {
+    try {
+      const response = await client.get('/dependencies/dependency-graph');
+      const { nodes, edges, critical_path } = response.data;
+      
+      setDependencies(edges);
+      
+      // Преобразуем данные для отображения
+      const criticalStages = new Set();
+      nodes.forEach(node => {
+        if (critical_path.includes(node.id)) {
+          criticalStages.add(node.stage);
+        }
+      });
+      
+      return {
+        nodes,
+        edges,
+        criticalStages: Array.from(criticalStages),
+        criticalTaskIds: critical_path
+      };
+    } catch (error) {
+      console.error('Ошибка загрузки графа зависимостей:', error);
+      // Fallback на локальный расчёт
+      return calculateCPMLocal(tasksRef.current);
+    }
+  }, [calculateCPMLocal]);
+
   // Функция сортировки
   const sortTasks = useCallback((taskList, sortType) => {
     const sorted = [...taskList];
@@ -241,9 +284,9 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
   useEffect(() => {
     if (!schedules || schedules.length === 0) return;
 
-    // БАГ-ФИХ: Не обновляем tasks если идёт перетаскивание
+    // БАГ-ФИХ: Не обновляем tasks если идёт перетаскивание или сохранение
     // Это предотвращает потерю изменений при обновлении schedules извне
-    if (dragging || resizing) {
+    if (dragging || resizing || isSyncing) {
       return;
     }
 
@@ -266,18 +309,19 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
       });
 
     setTasks(sortTasks(processed, sortBy));
-  }, [schedules, cities, viewMode, sortBy, sortTasks, dragging, resizing]);
+  }, [schedules, cities, viewMode, sortBy, sortTasks, dragging, resizing, isSyncing]);
 
   // Загрузка критического пути при включении режима
+  // Используем ref для проверки наличия tasks, чтобы избежать бесконечных вызовов
   useEffect(() => {
-    if (showCriticalPath && tasks.length > 0) {
+    if (showCriticalPath && tasksRef.current.length > 0) {
       fetchDependencyGraph().then(data => {
         setCpmData(data);
       });
     } else if (!showCriticalPath) {
       setCpmData({ nodes: [], edges: [], criticalStages: [], criticalTaskIds: [] });
     }
-  }, [showCriticalPath, tasks, fetchDependencyGraph]);
+  }, [showCriticalPath, fetchDependencyGraph]);
 
   // Позиция плановых дат (для фонового отображения)
   const getPlannedPosition = useCallback((task) => {
@@ -306,7 +350,13 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
   // Drag handlers - используем ref для хранения состояния перетаскивания
   const dragStateRef = useRef(null);
   const resizeStateRef = useRef(null);
-  const originalTaskRef = useRef(null); // БАГ-ФИХ: Сохраняем оригинальную задачу
+  const originalTaskRef = useRef(null); // Сохраняем оригинальную задачу
+  const tasksRef = useRef(tasks); // Ref для доступа к tasks без пересоздания callback
+  
+  // Обновляем ref при изменении tasks
+  useEffect(() => {
+    tasksRef.current = tasks;
+  }, [tasks]);
   
   const handleMouseDown = (e, task, action) => {
     e.preventDefault();
@@ -437,80 +487,12 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     }
   }, [DAY_WIDTH]);
 
-  const handleMouseUp = useCallback(async () => {
+  const handleMouseUp = useCallback(() => {
     const dragState = dragStateRef.current;
     const resizeState = resizeStateRef.current;
     const originalTask = originalTaskRef.current;
     
-    if (dragState || resizeState) {
-      const taskId = dragState?.taskId || resizeState?.taskId;
-      
-      // БАГ-ФИХ: Используем функциональное обновление для получения актуального состояния
-      setTasks(currentTasks => {
-        const updated = currentTasks.find(t => t.id === taskId);
-        
-        // БАГ-ФИХ: Проверяем что задача существует и даты валидны
-        if (updated && updated.actualStart && updated.actualEnd) {
-          // БАГ-ФИХ: Сохраняем данные для отложенного сохранения
-          pendingSaveRef.current = {
-            taskId: updated.id,
-            updates: {
-              actual_start_date: updated.actualStart.toISOString(),
-              actual_end_date: updated.actualEnd.toISOString()
-            },
-            originalTask
-          };
-          
-          // Показываем индикатор синхронизации
-          setIsSyncing(true);
-          
-          // БАГ-ФИХ: Дебаунсинг сохранения (100мс после последнего mouseUp)
-          if (saveTimeoutRef.current) {
-            clearTimeout(saveTimeoutRef.current);
-          }
-          
-          saveTimeoutRef.current = setTimeout(() => {
-            const saveData = pendingSaveRef.current;
-            if (saveData && onScheduleUpdate) {
-              onScheduleUpdate(saveData.taskId, saveData.updates)
-                .then(() => {
-                  // Скрываем индикатор после успешного сохранения
-                  setTimeout(() => setIsSyncing(false), 300);
-                  pendingSaveRef.current = null;
-                })
-                .catch(error => {
-                  console.error('Ошибка обновления фактических дат:', error);
-                  setIsSyncing(false);
-                  
-                  // БАГ-ФИХ: Откатываем изменения при ошибке
-                  if (saveData.originalTask) {
-                    setTasks(prev => prev.map(t => 
-                      t.id === saveData.taskId ? saveData.originalTask : t
-                    ));
-                  }
-                  pendingSaveRef.current = null;
-                });
-            }
-          }, 100); // 100мс дебаунс
-        } else {
-          console.warn('Задача не найдена или даты невалидны, отменяем сохранение');
-          setIsSyncing(false);
-        }
-        
-        return currentTasks; // Возвращаем текущее состояние
-      });
-      
-      // Обновляем критический путь в фоне (без ожидания), тоже с дебаунсом
-      if (showCriticalPath) {
-        setTimeout(() => {
-          fetchDependencyGraph()
-            .then(data => setCpmData(data))
-            .catch(err => console.error('Ошибка обновления критического пути:', err));
-        }, 150);
-      }
-    }
-    
-    // Очищаем refs и state сразу для плавности
+    // Очищаем refs и state СРАЗУ (до сохранения)
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -521,6 +503,67 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     originalTaskRef.current = null;
     setDragging(null);
     setResizing(null);
+    
+    // Если не было перетаскивания - выходим
+    if (!dragState && !resizeState) return;
+    
+    const taskId = dragState?.taskId || resizeState?.taskId;
+    
+    // Используем ref для доступа к текущим tasks (без зависимости в useCallback)
+    const currentTasks = tasksRef.current;
+    const updated = currentTasks.find(t => t.id === taskId);
+    
+    // Проверяем что задача существует и даты валидны
+    if (!updated || !updated.actualStart || !updated.actualEnd) {
+      console.warn('Задача не найдена или даты невалидны');
+      return;
+    }
+    
+    // Формируем данные для сохранения
+    const saveData = {
+      actual_start_date: updated.actualStart.toISOString(),
+      actual_end_date: updated.actualEnd.toISOString()
+    };
+    
+    // КРИТИЧЕСКИЙ БАГ-ФИХ: Убираем setTimeout - вызываем сохранение сразу
+    // Используем счётчик вместо boolean для поддержки множественных операций
+    (async () => {
+      // Увеличиваем счётчик активных операций
+      setSyncCount(prev => prev + 1);
+      
+      try {
+        if (onScheduleUpdate) {
+          // БАГ-ФИХ: Добавляем таймаут для запроса (10 секунд)
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Таймаут сохранения')), 10000)
+          );
+          
+          await Promise.race([
+            onScheduleUpdate(updated.id, saveData),
+            timeoutPromise
+          ]);
+        }
+      } catch (error) {
+        console.error('Ошибка сохранения:', error);
+        
+        // Откатываем изменения при ошибке
+        if (originalTask) {
+          setTasks(prev => prev.map(t => 
+            t.id === taskId ? originalTask : t
+          ));
+        }
+      } finally {
+        // БАГ-ФИХ: Уменьшаем счётчик активных операций
+        setSyncCount(prev => Math.max(0, prev - 1));
+      }
+      
+      // Обновляем критический путь в фоне (после завершения сохранения)
+      if (showCriticalPath) {
+        fetchDependencyGraph()
+          .then(data => setCpmData(data))
+          .catch(err => console.error('Ошибка обновления КП:', err));
+      }
+    })();
   }, [onScheduleUpdate, showCriticalPath, fetchDependencyGraph]);
 
   useEffect(() => {
@@ -536,12 +579,13 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
           cancelAnimationFrame(rafRef.current);
           rafRef.current = null;
         }
-        if (saveTimeoutRef.current) {
-          clearTimeout(saveTimeoutRef.current);
-          saveTimeoutRef.current = null;
-        }
       };
     }
+    
+    // КРИТИЧЕСКИЙ БАГ-ФИХ: Сбрасываем счётчик при размонтировании компонента
+    return () => {
+      setSyncCount(0);
+    };
   }, [dragging, resizing, handleMouseMove, handleMouseUp]);
 
   const isCritical = (task) => {
@@ -997,6 +1041,30 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
             </select>
           </div>
 
+          {/* Фильтр по году */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '12px', color: '#64748b' }}>Год:</span>
+            <select
+              value={yearFilter}
+              onChange={(e) => setYearFilter(e.target.value)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid #e2e8f0',
+                background: '#fff',
+                fontSize: '13px',
+                color: '#1e293b',
+                cursor: 'pointer',
+                minWidth: '120px'
+              }}
+            >
+              <option value="all">📅 Все годы</option>
+              {availableYears.map(year => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          </div>
+
           <button
             onClick={() => setShowCriticalPath(!showCriticalPath)}
             style={{
@@ -1046,7 +1114,7 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
             <strong style={{ color: '#ea580c' }}>
               {cpmData.criticalTaskIds?.length || cpmData.criticalStages?.length || 0}
             </strong>
-            <span style={{ color: '#a8a29e' }}> / {tasks.length}</span>
+            <span style={{ color: '#a8a29e' }}> / {filteredTasks.length}</span>
           </div>
           {cpmData.nodes?.length > 0 && (
             <div>
@@ -1093,7 +1161,7 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
             position: 'relative',
             zIndex: 50
           }}>
-            Задачи ({tasks.length})
+            Задачи ({filteredTasks.length})
           </div>
           
           {/* Список задач */}
@@ -1507,7 +1575,7 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
               })()}
 
               {/* Строки задач */}
-              {tasks.map((task, index) => (
+              {filteredTasks.map((task, index) => (
                 <div
                   key={task.id}
                   style={{

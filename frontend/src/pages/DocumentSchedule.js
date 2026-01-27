@@ -118,29 +118,36 @@ const DocumentSchedule = () => {
     }
   };
 
-  // Обработчик обновления дат из диаграммы Ганта (с оптимистичным UI)
+  // Обработчик обновления дат из диаграммы Ганта
+  // Важно: НЕ обновляем schedules здесь - ModernGanttChart сам управляет UI
   const handleScheduleUpdate = async (scheduleId, updates) => {
-    // Сохраняем старое состояние для отката в случае ошибки
-    const previousSchedules = [...schedules];
-    
-    // Оптимистично обновляем UI сразу (без перезагрузки)
-    setSchedules(prevSchedules => 
-      prevSchedules.map(schedule => 
+    try {
+      // БАГ-ФИХ: Добавлен таймаут 8 секунд для предотвращения зависания
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      
+      await client.put(`/schedules/${scheduleId}`, updates, {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      // БАГ-ФИХ: Обновляем локальный state после успешного сохранения
+      // Это предотвращает визуальный возврат блока на старое место
+      setSchedules(prev => prev.map(schedule => 
         schedule.id === scheduleId 
           ? { ...schedule, ...updates }
           : schedule
-      )
-    );
-    
-    // Синхронизируем с сервером в фоне
-    try {
-      await client.put(`/schedules/${scheduleId}`, updates);
-      // Успешно сохранено - ничего не делаем, UI уже обновлён
+      ));
     } catch (error) {
-      console.error('Error updating schedule:', error);
-      // Откатываем изменения при ошибке
-      setSchedules(previousSchedules);
-      showError('Ошибка при обновлении дат');
+      if (error.name === 'AbortError') {
+        console.error('Таймаут запроса сохранения');
+        showError('Превышено время ожидания сохранения');
+      } else {
+        console.error('Error updating schedule:', error);
+        showError('Ошибка при обновлении дат');
+      }
+      throw error;
     }
   };
 
@@ -323,6 +330,7 @@ const DocumentSchedule = () => {
       return (
         <StageAutocomplete
           value={value || ''}
+          stages={stages}
           onChange={(newValue) => {
             if (newValue && newValue.trim()) saveCell(schedule.id, field, newValue);
           }}
