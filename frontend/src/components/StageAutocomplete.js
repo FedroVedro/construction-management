@@ -1,12 +1,30 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 
+// Цвета для этапов строительства (циклически)
+const STAGE_COLORS = [
+  { bg: '#e3f2fd', border: '#2196f3', text: '#1565c0' }, // Синий
+  { bg: '#e8f5e9', border: '#4caf50', text: '#2e7d32' }, // Зеленый
+  { bg: '#fff3e0', border: '#ff9800', text: '#e65100' }, // Оранжевый
+  { bg: '#f3e5f5', border: '#9c27b0', text: '#6a1b9a' }, // Фиолетовый
+  { bg: '#e0f7fa', border: '#00bcd4', text: '#00838f' }, // Бирюзовый
+  { bg: '#fce4ec', border: '#e91e63', text: '#c2185b' }, // Розовый
+  { bg: '#fff8e1', border: '#ffc107', text: '#ff8f00' }, // Желтый
+  { bg: '#e8eaf6', border: '#3f51b5', text: '#283593' }, // Индиго
+  { bg: '#efebe9', border: '#795548', text: '#4e342e' }, // Коричневый
+  { bg: '#eceff1', border: '#607d8b', text: '#37474f' }, // Серо-синий
+];
+
+const getStageColor = (index) => {
+  return STAGE_COLORS[index % STAGE_COLORS.length];
+};
+
 const StageAutocomplete = ({ value, onChange, onBlur, autoFocus = false, stages = [] }) => {
   const [inputValue, setInputValue] = useState(value || '');
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
-  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0, openUpward: false, inputHeight: 0 });
   const inputRef = useRef(null);
   const wrapperRef = useRef(null);
   const dropdownRef = useRef(null);
@@ -14,7 +32,12 @@ const StageAutocomplete = ({ value, onChange, onBlur, autoFocus = false, stages 
   const hasSelectedStage = useRef(false);
 
   // Используем stages из props - НЕ загружаем каждый раз!
-  const allStages = stages;
+  // Добавляем индексы к этапам для отображения номеров
+  const allStages = stages.map((stage, index) => ({
+    ...stage,
+    displayIndex: index + 1,
+    color: getStageColor(index)
+  }));
 
   // Устанавливаем начальное значение
   useEffect(() => {
@@ -43,10 +66,20 @@ const StageAutocomplete = ({ value, onChange, onBlur, autoFocus = false, stages 
   const updatePosition = useCallback(() => {
     if (inputRef.current && showSuggestions) {
       const rect = inputRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const dropdownMaxHeight = 350; // Максимальная высота dropdown
+      const spaceBelow = viewportHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      
+      // Определяем, нужно ли открывать вверх
+      const openUpward = spaceBelow < dropdownMaxHeight && spaceAbove > spaceBelow;
+      
       setDropdownPosition({
-        top: rect.bottom,
+        top: openUpward ? rect.top : rect.bottom,
         left: rect.left,
-        width: rect.width
+        width: rect.width,
+        openUpward,
+        inputHeight: rect.height
       });
     }
   }, [showSuggestions]);
@@ -279,26 +312,68 @@ const StageAutocomplete = ({ value, onChange, onBlur, autoFocus = false, stages 
     }, 200);
   };
 
+  // Находим цвет текущего выбранного этапа
+  const currentStageIndex = allStages.findIndex(s => s.name === inputValue);
+  const currentColor = currentStageIndex >= 0 ? allStages[currentStageIndex].color : null;
+
   return (
     <div ref={wrapperRef} style={{ position: 'relative', width: '100%' }}>
-      <input
-        ref={inputRef}
-        type="text"
-        value={inputValue}
-        onChange={handleInputChange}
-        onClick={handleInputClick}
-        onFocus={handleInputFocus}
-        onKeyDown={handleKeyDown}
-        onBlur={handleInputBlur}
-        placeholder="Кликните или начните вводить название этапа..."
-        autoFocus={autoFocus}
-        style={{
-          width: '100%',
-          padding: '4px',
-          fontSize: '14px',
-          cursor: 'text'
-        }}
-      />
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        {currentColor && (
+          <div style={{
+            position: 'absolute',
+            left: '8px',
+            width: '24px',
+            height: '24px',
+            borderRadius: '6px',
+            backgroundColor: currentColor.bg,
+            border: `2px solid ${currentColor.border}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '11px',
+            fontWeight: '700',
+            color: currentColor.text,
+            zIndex: 1,
+            pointerEvents: 'none'
+          }}>
+            {currentStageIndex + 1}
+          </div>
+        )}
+        <input
+          ref={inputRef}
+          type="text"
+          value={inputValue}
+          onChange={handleInputChange}
+          onClick={handleInputClick}
+          onFocus={handleInputFocus}
+          onKeyDown={handleKeyDown}
+          onBlur={handleInputBlur}
+          placeholder="Выберите этап строительства..."
+          autoFocus={autoFocus}
+          style={{
+            width: '100%',
+            padding: currentColor ? '6px 8px 6px 40px' : '6px 8px',
+            fontSize: '14px',
+            cursor: 'pointer',
+            border: currentColor ? `1px solid ${currentColor.border}` : '1px solid #ddd',
+            borderRadius: '6px',
+            backgroundColor: currentColor ? currentColor.bg : 'white',
+            color: currentColor ? currentColor.text : 'inherit',
+            fontWeight: currentColor ? '500' : 'normal',
+            transition: 'all 0.2s ease'
+          }}
+        />
+        <div style={{
+          position: 'absolute',
+          right: '8px',
+          pointerEvents: 'none',
+          color: '#999',
+          fontSize: '10px'
+        }}>
+          ▼
+        </div>
+      </div>
       {showSuggestions && suggestions.length > 0 && (
         <DropdownPortal
           dropdownRef={dropdownRef}
@@ -309,6 +384,7 @@ const StageAutocomplete = ({ value, onChange, onBlur, autoFocus = false, stages 
           onMouseUp={() => { isMouseDownOnDropdown.current = false; }}
           onSelect={selectStage}
           onHover={setSelectedIndex}
+          allStages={allStages}
         />
       )}
     </div>
@@ -324,59 +400,160 @@ const DropdownPortal = ({
   onMouseDown,
   onMouseUp,
   onSelect, 
-  onHover 
+  onHover,
+  allStages 
 }) => {
+  const { openUpward } = position;
+  const maxHeight = 350;
+  
+  // Вычисляем доступную высоту
+  const availableHeight = openUpward 
+    ? position.top - 8 
+    : window.innerHeight - position.top - 8;
+  const actualMaxHeight = Math.min(maxHeight, availableHeight);
+  
   return ReactDOM.createPortal(
     <div
       ref={dropdownRef}
       style={{
         position: 'fixed',
-        top: position.top,
+        ...(openUpward 
+          ? { bottom: window.innerHeight - position.top + 4 }
+          : { top: position.top + 4 }
+        ),
         left: position.left,
-        width: position.width,
+        width: Math.max(position.width, 320),
         zIndex: 99999,
         backgroundColor: 'white',
-        border: '1px solid #ddd',
-        borderTop: 'none',
-        maxHeight: '200px',
+        border: '1px solid #e0e0e0',
+        maxHeight: `${actualMaxHeight}px`,
         overflowY: 'auto',
         overflowX: 'hidden',
-        boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
-        borderRadius: '0 0 4px 4px'
+        boxShadow: openUpward 
+          ? '0 -8px 24px rgba(0,0,0,0.15)' 
+          : '0 8px 24px rgba(0,0,0,0.15)',
+        borderRadius: '10px'
       }}
       onMouseDown={onMouseDown}
       onMouseUp={onMouseUp}
     >
-      {suggestions.map((stage, index) => (
-        <div
-          key={stage.id}
-          onClick={() => onSelect(stage)}
-          onMouseEnter={() => onHover(index)}
-          style={{
-            padding: '8px 12px',
-            cursor: 'pointer',
-            backgroundColor: index === selectedIndex ? '#f8f9fa' : 'white',
-            color: 'black',
-            borderBottom: index < suggestions.length - 1 ? '1px solid #f0f0f0' : 'none',
-            transition: 'background-color 0.1s ease',
-            userSelect: 'none'
-          }}
-        >
-          <div style={{ fontWeight: 'bold', pointerEvents: 'none' }}>
-            {stage.name}
-          </div>
-          {stage.description && (
+      {/* Заголовок списка */}
+      <div style={{
+        padding: '12px 16px 8px',
+        fontSize: '11px',
+        fontWeight: '600',
+        color: '#666',
+        textTransform: 'uppercase',
+        letterSpacing: '0.5px',
+        borderBottom: '1px solid #f0f0f0',
+        backgroundColor: '#fafafa',
+        position: 'sticky',
+        top: 0,
+        zIndex: 1
+      }}>
+        Этапы строительства ({suggestions.length})
+      </div>
+      
+      {suggestions.map((stage, index) => {
+        // Находим оригинальный индекс этапа в allStages
+        const originalIndex = allStages.findIndex(s => s.id === stage.id);
+        const stageColor = originalIndex >= 0 ? allStages[originalIndex].color : getStageColor(index);
+        const displayNumber = originalIndex >= 0 ? originalIndex + 1 : index + 1;
+        
+        return (
+          <div
+            key={stage.id}
+            onClick={() => onSelect(stage)}
+            onMouseEnter={() => onHover(index)}
+            style={{
+              padding: '10px 16px',
+              cursor: 'pointer',
+              backgroundColor: index === selectedIndex ? stageColor.bg : 'white',
+              borderLeft: index === selectedIndex ? `4px solid ${stageColor.border}` : '4px solid transparent',
+              transition: 'all 0.15s ease',
+              userSelect: 'none',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '12px'
+            }}
+          >
+            {/* Номер этапа */}
             <div style={{
-              fontSize: '12px',
-              color: '#666',
-              marginTop: '2px',
+              width: '32px',
+              height: '32px',
+              borderRadius: '8px',
+              backgroundColor: stageColor.bg,
+              border: `2px solid ${stageColor.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '13px',
+              fontWeight: '700',
+              color: stageColor.text,
+              flexShrink: 0,
               pointerEvents: 'none'
             }}>
-              {stage.description}
+              {displayNumber}
             </div>
-          )}
-        </div>
-      ))}
+            
+            {/* Информация об этапе */}
+            <div style={{ flex: 1, minWidth: 0, pointerEvents: 'none' }}>
+              <div style={{ 
+                fontWeight: '600', 
+                fontSize: '14px',
+                color: index === selectedIndex ? stageColor.text : '#333',
+                marginBottom: stage.description ? '4px' : 0,
+                lineHeight: '1.3'
+              }}>
+                {stage.name}
+              </div>
+              {stage.description && (
+                <div style={{
+                  fontSize: '12px',
+                  color: '#888',
+                  lineHeight: '1.4',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical'
+                }}>
+                  {stage.description}
+                </div>
+              )}
+            </div>
+            
+            {/* Индикатор выбора */}
+            {index === selectedIndex && (
+              <div style={{
+                color: stageColor.text,
+                fontSize: '14px',
+                fontWeight: 'bold',
+                pointerEvents: 'none'
+              }}>
+                ✓
+              </div>
+            )}
+          </div>
+        );
+      })}
+      
+      {/* Подсказка внизу */}
+      <div style={{
+        padding: '8px 16px',
+        fontSize: '11px',
+        color: '#999',
+        borderTop: '1px solid #f0f0f0',
+        backgroundColor: '#fafafa',
+        display: 'flex',
+        justifyContent: 'space-between',
+        position: 'sticky',
+        bottom: 0
+      }}>
+        <span>↑↓ навигация</span>
+        <span>Enter для выбора</span>
+        <span>Esc для отмены</span>
+      </div>
     </div>,
     document.body
   );

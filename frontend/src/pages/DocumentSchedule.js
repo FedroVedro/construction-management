@@ -9,6 +9,7 @@ import ScheduleToolbar from '../components/ScheduleToolbar';
 import QuickDatePicker from '../components/QuickDatePicker';
 import RowActions from '../components/RowActions';
 import StatusBadge from '../components/StatusBadge';
+import { AddRowButtonCompact } from '../components/AddRowButton';
 import { saveScheduleOrder, applyScheduleOrder } from '../utils/scheduleOrderStorage';
 import { saveSelectedCity, getSelectedCity, saveViewMode, getViewMode } from '../utils/userPreferences';
 import { validateDates, prepareRowForCopy } from '../utils/scheduleHelpers';
@@ -548,6 +549,13 @@ const DocumentSchedule = () => {
                         )}
                       </td>
                     </tr>
+                  )}
+                  {/* Кнопка добавления строки под последней строкой */}
+                  {filteredSchedules.length > 0 && canEdit && (
+                    <AddRowButtonCompact 
+                      onClick={addNewRow} 
+                      colSpan={10}
+                    />
                   )}
                 </tbody>
               </table>

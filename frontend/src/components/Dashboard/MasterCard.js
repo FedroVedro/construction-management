@@ -27,6 +27,8 @@ const MasterCard = ({ cityId }) => {
   const [stages, setStages] = useState([]);
   const [selectedStage, setSelectedStage] = useState('');
   const [searchText, setSearchText] = useState('');
+  const [sortBy, setSortBy] = useState('stage'); // stage, status, delay
+  const [sortOrder, setSortOrder] = useState('asc'); // asc, desc
   const { showError } = useToast();
 
   useEffect(() => {
@@ -62,12 +64,14 @@ const MasterCard = ({ cityId }) => {
   const getFilteredDeviations = () => {
     if (!data || !data.deviations) return [];
     
-    let filtered = data.deviations;
+    let filtered = [...data.deviations];
     
+    // Фильтрация по этапу
     if (selectedStage) {
       filtered = filtered.filter(item => item.construction_stage === selectedStage);
     }
     
+    // Фильтрация по тексту
     if (searchText) {
       const search = searchText.toLowerCase();
       filtered = filtered.filter(item => 
@@ -75,6 +79,40 @@ const MasterCard = ({ cityId }) => {
         item.detail_info?.toLowerCase().includes(search)
       );
     }
+    
+    // Сортировка
+    filtered.sort((a, b) => {
+      let comparison = 0;
+      
+      switch (sortBy) {
+        case 'stage':
+          // Сортировка по order_index этапа
+          const stageA = stages.find(s => s.name === a.construction_stage);
+          const stageB = stages.find(s => s.name === b.construction_stage);
+          const orderA = stageA ? stageA.order_index : 999;
+          const orderB = stageB ? stageB.order_index : 999;
+          comparison = orderA - orderB;
+          break;
+          
+        case 'status':
+          // Порядок: delayed -> on_time -> ahead
+          const statusOrder = { delayed: 0, on_time: 1, ahead: 2 };
+          comparison = (statusOrder[a.status] || 1) - (statusOrder[b.status] || 1);
+          break;
+          
+        case 'delay':
+          // Сортировка по отклонению в днях
+          const delayA = a.delay_days || -(a.ahead_days || 0);
+          const delayB = b.delay_days || -(b.ahead_days || 0);
+          comparison = delayB - delayA; // Большие задержки сначала
+          break;
+          
+        default:
+          comparison = 0;
+      }
+      
+      return sortOrder === 'desc' ? -comparison : comparison;
+    });
     
     return filtered;
   };
@@ -194,7 +232,7 @@ const MasterCard = ({ cityId }) => {
       
       <h3 style={{ marginTop: '30px' }}>Детальная информация</h3>
 
-      {/* Блок фильтров */}
+      {/* Блок фильтров и сортировки */}
       <div style={{ 
         padding: '15px', 
         backgroundColor: 'var(--table-stripe)', 
@@ -203,9 +241,9 @@ const MasterCard = ({ cityId }) => {
         display: 'flex',
         gap: '15px',
         flexWrap: 'wrap',
-        alignItems: 'center'
+        alignItems: 'flex-end'
       }}>
-        <div style={{ minWidth: '250px' }}>
+        <div style={{ minWidth: '220px' }}>
           <label style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
             📋 Этап строительства:
           </label>
@@ -224,7 +262,7 @@ const MasterCard = ({ cityId }) => {
           </select>
         </div>
 
-        <div style={{ minWidth: '250px' }}>
+        <div style={{ minWidth: '200px' }}>
           <label style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
             🔍 Поиск:
           </label>
@@ -238,19 +276,56 @@ const MasterCard = ({ cityId }) => {
           />
         </div>
 
+        {/* Разделитель */}
+        <div style={{ width: '1px', height: '36px', backgroundColor: 'var(--border-color)', margin: '0 5px' }} />
+
+        {/* Сортировка */}
+        <div style={{ minWidth: '180px' }}>
+          <label style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+            📊 Сортировка:
+          </label>
+          <select 
+            value={sortBy} 
+            onChange={(e) => setSortBy(e.target.value)}
+            className="form-control"
+            style={{ fontSize: '14px' }}
+          >
+            <option value="stage">🏗️ По этапу</option>
+            <option value="status">🚦 По статусу</option>
+            <option value="delay">📅 По отклонению</option>
+          </select>
+        </div>
+
+        {/* Направление сортировки */}
+        <div>
+          <button
+            onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+            className="btn btn-secondary"
+            style={{ 
+              padding: '8px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '14px'
+            }}
+            title={sortOrder === 'asc' ? 'По возрастанию' : 'По убыванию'}
+          >
+            {sortOrder === 'asc' ? '↑' : '↓'}
+            {sortOrder === 'asc' ? 'А-Я' : 'Я-А'}
+          </button>
+        </div>
+
         {(selectedStage || searchText) && (
-          <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-            <button
-              onClick={() => {
-                setSelectedStage('');
-                setSearchText('');
-              }}
-              className="btn btn-secondary"
-              style={{ marginTop: '18px' }}
-            >
-              ✕ Сбросить фильтры
-            </button>
-          </div>
+          <button
+            onClick={() => {
+              setSelectedStage('');
+              setSearchText('');
+            }}
+            className="btn btn-secondary"
+            style={{ padding: '8px 12px' }}
+          >
+            ✕ Сбросить
+          </button>
         )}
       </div>
 

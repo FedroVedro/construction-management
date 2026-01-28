@@ -13,10 +13,13 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
   const [dragging, setDragging] = useState(null);
   const [resizing, setResizing] = useState(null);
   const [hoveredTask, setHoveredTask] = useState(null);
-  const [sortBy, setSortBy] = useState('date'); // date, name, stage, type, city
+  const [sortBy, setSortBy] = useState('stage'); // date, stage, type
   const [syncCount, setSyncCount] = useState(0); // Счётчик активных операций синхронизации
   const isSyncing = syncCount > 0; // Индикатор синхронизации (вычисляемое значение)
-  const [yearFilter, setYearFilter] = useState('all'); // Фильтр по году
+  const [yearRangeStart, setYearRangeStart] = useState(null); // Начальный год диапазона
+  const [yearRangeEnd, setYearRangeEnd] = useState(null); // Конечный год диапазона
+  const [stageFilter, setStageFilter] = useState(''); // Фильтр по этапу строительства
+  const [stages, setStages] = useState([]); // Список этапов строительства
   
   const sidebarRef = useRef(null);
   const timelineBodyRef = useRef(null);
@@ -25,10 +28,10 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
   const pendingUpdateRef = useRef(null); // Для хранения отложенного обновления
 
   // Константы
-  const ROW_HEIGHT = 50;
+  const ROW_HEIGHT = 56;
   const HEADER_HEIGHT = 70;
-  const TASK_HEIGHT = 36;
-  const SIDEBAR_WIDTH = 320;
+  const TASK_HEIGHT = 40;
+  const SIDEBAR_WIDTH = 340;
   const DAY_WIDTH = timeScale === 'day' ? 30 : timeScale === 'week' ? 12 : 4;
 
   // Цвета (мягкие пастельные оттенки)
@@ -87,6 +90,21 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     }
   };
 
+  // Загрузка этапов строительства
+  useEffect(() => {
+    const fetchStages = async () => {
+      try {
+        const response = await client.get('/construction-stages?active_only=true');
+        // Сортируем по order_index для правильного порядка
+        const sortedStages = response.data.sort((a, b) => a.order_index - b.order_index);
+        setStages(sortedStages);
+      } catch (error) {
+        console.error('Error fetching stages:', error);
+      }
+    };
+    fetchStages();
+  }, []);
+
   // Доступные годы из задач
   const availableYears = useMemo(() => {
     if (tasks.length === 0) return [];
@@ -100,22 +118,49 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     return Array.from(years).sort((a, b) => a - b);
   }, [tasks]);
 
-  // Фильтруем задачи по году
+  // Инициализация диапазона годов при загрузке данных
+  useEffect(() => {
+    if (availableYears.length > 0 && yearRangeStart === null) {
+      setYearRangeStart(availableYears[0]);
+      setYearRangeEnd(availableYears[availableYears.length - 1]);
+    }
+  }, [availableYears, yearRangeStart]);
+
+  // Минимальный и максимальный годы
+  const minYear = availableYears.length > 0 ? availableYears[0] : new Date().getFullYear();
+  const maxYear = availableYears.length > 0 ? availableYears[availableYears.length - 1] : new Date().getFullYear();
+
+  // Фильтруем задачи по диапазону годов и этапу строительства
   const filteredTasks = useMemo(() => {
-    if (yearFilter === 'all') return tasks;
-    const year = parseInt(yearFilter);
-    return tasks.filter(task => {
-      // Показываем задачу если хотя бы одна из её дат попадает в выбранный год
-      const startYear = task.plannedStart?.getFullYear();
-      const endYear = task.plannedEnd?.getFullYear();
-      const actualStartYear = task.actualStart?.getFullYear();
-      const actualEndYear = task.actualEnd?.getFullYear();
-      
-      return startYear === year || endYear === year || 
-             actualStartYear === year || actualEndYear === year ||
-             (startYear && endYear && startYear <= year && endYear >= year);
-    });
-  }, [tasks, yearFilter]);
+    let filtered = tasks;
+    
+    // Фильтр по диапазону годов
+    if (yearRangeStart !== null && yearRangeEnd !== null) {
+      filtered = filtered.filter(task => {
+        // Показываем задачу если она пересекается с выбранным диапазоном годов
+        const startYear = task.plannedStart?.getFullYear();
+        const endYear = task.plannedEnd?.getFullYear();
+        const actualStartYear = task.actualStart?.getFullYear();
+        const actualEndYear = task.actualEnd?.getFullYear();
+        
+        // Задача попадает в диапазон если хотя бы одна из дат попадает
+        const plannedInRange = (startYear && startYear >= yearRangeStart && startYear <= yearRangeEnd) ||
+                               (endYear && endYear >= yearRangeStart && endYear <= yearRangeEnd) ||
+                               (startYear && endYear && startYear <= yearRangeStart && endYear >= yearRangeEnd);
+        const actualInRange = (actualStartYear && actualStartYear >= yearRangeStart && actualStartYear <= yearRangeEnd) ||
+                              (actualEndYear && actualEndYear >= yearRangeStart && actualEndYear <= yearRangeEnd);
+        
+        return plannedInRange || actualInRange;
+      });
+    }
+    
+    // Фильтр по этапу строительства
+    if (stageFilter) {
+      filtered = filtered.filter(task => task.constructionStage === stageFilter);
+    }
+    
+    return filtered;
+  }, [tasks, yearRangeStart, yearRangeEnd, stageFilter]);
 
   // Временной диапазон
   const timeRange = useMemo(() => {
@@ -124,11 +169,11 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     let minDate = new Date(Math.min(...filteredTasks.map(t => t.plannedStart.getTime())));
     let maxDate = new Date(Math.max(...filteredTasks.map(t => t.plannedEnd.getTime())));
     
-    // Если фильтр по году активен, ограничиваем диапазон этим годом
-    if (yearFilter !== 'all') {
-      const year = parseInt(yearFilter);
-      const yearStart = new Date(year, 0, 1);
-      const yearEnd = new Date(year, 11, 31);
+    // Если фильтр по диапазону годов активен, ограничиваем диапазон
+    if (yearRangeStart !== null && yearRangeEnd !== null && 
+        (yearRangeStart !== minYear || yearRangeEnd !== maxYear)) {
+      const yearStart = new Date(yearRangeStart, 0, 1);
+      const yearEnd = new Date(yearRangeEnd, 11, 31);
       minDate = minDate < yearStart ? yearStart : minDate;
       maxDate = maxDate > yearEnd ? yearEnd : maxDate;
     }
@@ -138,7 +183,7 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     
     const days = Math.ceil((maxDate - minDate) / (1000 * 60 * 60 * 24));
     return { start: minDate, end: maxDate, days };
-  }, [filteredTasks, yearFilter]);
+  }, [filteredTasks, yearRangeStart, yearRangeEnd, minYear, maxYear]);
 
   // Заголовки месяцев
   const monthHeaders = useMemo(() => {
@@ -254,27 +299,24 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
   }, [calculateCPMLocal]);
 
   // Функция сортировки
-  const sortTasks = useCallback((taskList, sortType) => {
+  const sortTasks = useCallback((taskList, sortType, stagesList = []) => {
     const sorted = [...taskList];
     switch (sortType) {
       case 'date':
         return sorted.sort((a, b) => a.plannedStart - b.plannedStart);
       case 'date-desc':
         return sorted.sort((a, b) => b.plannedStart - a.plannedStart);
-      case 'name':
-        return sorted.sort((a, b) => (a.workName || a.constructionStage).localeCompare(b.workName || b.constructionStage));
       case 'stage':
-        return sorted.sort((a, b) => a.constructionStage.localeCompare(b.constructionStage));
+        // Сортировка по порядку этапов (order_index)
+        return sorted.sort((a, b) => {
+          const stageA = stagesList.find(s => s.name === a.constructionStage);
+          const stageB = stagesList.find(s => s.name === b.constructionStage);
+          const orderA = stageA ? stageA.order_index : 999;
+          const orderB = stageB ? stageB.order_index : 999;
+          return orderA - orderB;
+        });
       case 'type':
         return sorted.sort((a, b) => a.type.localeCompare(b.type));
-      case 'city':
-        return sorted.sort((a, b) => a.cityName.localeCompare(b.cityName));
-      case 'duration':
-        return sorted.sort((a, b) => {
-          const durA = a.plannedEnd - a.plannedStart;
-          const durB = b.plannedEnd - b.plannedStart;
-          return durB - durA;
-        });
       default:
         return sorted;
     }
@@ -308,8 +350,8 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
         };
       });
 
-    setTasks(sortTasks(processed, sortBy));
-  }, [schedules, cities, viewMode, sortBy, sortTasks, dragging, resizing, isSyncing]);
+    setTasks(sortTasks(processed, sortBy, stages));
+  }, [schedules, cities, viewMode, sortBy, sortTasks, dragging, resizing, isSyncing, stages]);
 
   // Загрузка критического пути при включении режима
   // Используем ref для проверки наличия tasks, чтобы избежать бесконечных вызовов
@@ -730,19 +772,53 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
               {formatDateShort(hasActualDates ? task.actualStart : task.plannedStart)}
             </span>
             
-            {/* Название и статус */}
-            {pos.width > 120 && (
-              <span style={{
+            {/* Этап строительства и название */}
+            {pos.width > 80 && (
+              <div style={{
                 flex: 1,
                 textAlign: 'center',
-                whiteSpace: 'nowrap',
                 overflow: 'hidden',
-                textOverflow: 'ellipsis',
                 padding: '0 4px',
-                fontSize: '11px'
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '1px'
               }}>
-                {hasActualDates ? (task.workName || task.constructionStage) : '📋 План'}
-              </span>
+                {/* Этап строительства - компактный бейдж */}
+                <span style={{
+                  fontSize: '8px',
+                  fontWeight: '700',
+                  background: 'rgba(255,255,255,0.25)',
+                  padding: '1px 4px',
+                  borderRadius: '3px',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  maxWidth: '100%',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.3px'
+                }}>
+                  {task.constructionStage}
+                </span>
+                {/* Название работы (если ширина позволяет) */}
+                {pos.width > 160 && task.workName && (
+                  <span style={{
+                    fontSize: '10px',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    maxWidth: '100%',
+                    opacity: 0.9
+                  }}>
+                    {hasActualDates ? task.workName : '📋 План'}
+                  </span>
+                )}
+                {/* Только для плана без названия */}
+                {pos.width > 160 && !task.workName && !hasActualDates && (
+                  <span style={{ fontSize: '10px', opacity: 0.8 }}>📋 План</span>
+                )}
+              </div>
             )}
             
             {/* Дата окончания (фактическая или плановая) */}
@@ -914,17 +990,52 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
             marginTop: '8px',
             background: '#1e293b',
             color: '#fff',
-            padding: '8px 12px',
-            borderRadius: '6px',
+            padding: '10px 14px',
+            borderRadius: '8px',
             fontSize: '11px',
             whiteSpace: 'nowrap',
             zIndex: 1000,
             boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-            pointerEvents: 'none'
+            pointerEvents: 'none',
+            minWidth: '220px'
           }}>
-            <div style={{ fontWeight: '600', marginBottom: '4px' }}>
-              {task.workName || task.constructionStage}
+            {/* Этап строительства - выделенный заголовок */}
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px',
+              marginBottom: '6px',
+              paddingBottom: '6px',
+              borderBottom: '1px solid rgba(255,255,255,0.1)'
+            }}>
+              <span style={{
+                background: task.color.bg,
+                color: task.color.border,
+                padding: '2px 8px',
+                borderRadius: '4px',
+                fontSize: '10px',
+                fontWeight: '700'
+              }}>
+                {typeNames[task.type]}
+              </span>
+              <span style={{ fontWeight: '600', color: '#e2e8f0' }}>
+                {task.constructionStage}
+              </span>
             </div>
+            
+            {/* Название работы */}
+            {task.workName && (
+              <div style={{ fontWeight: '500', marginBottom: '6px', color: '#fff' }}>
+                📋 {task.workName}
+              </div>
+            )}
+            
+            {/* Объект */}
+            <div style={{ color: '#94a3b8', fontSize: '10px', marginBottom: '4px' }}>
+              🏙️ {task.cityName}
+            </div>
+            
+            {/* Даты */}
             <div style={{ color: '#94a3b8' }}>
               📅 План: {formatDate(task.plannedStart)} — {formatDate(task.plannedEnd)}
             </div>
@@ -933,19 +1044,32 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
                 ✓ Факт: {formatDate(task.actualStart)} — {task.actualEnd ? formatDate(task.actualEnd) : 'в работе'}
               </div>
             )}
-            {timing.early > 0 && (
-              <div style={{ color: '#86efac', marginTop: '2px' }}>🎉 Завершено на {timing.early} дн. раньше!</div>
+            
+            {/* Статусы */}
+            {(timing.early > 0 || timing.delay > 0 || timing.earlyStart > 0 || timing.lateStart > 0 || critical) && (
+              <div style={{ 
+                marginTop: '6px', 
+                paddingTop: '6px', 
+                borderTop: '1px solid rgba(255,255,255,0.1)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '2px'
+              }}>
+                {timing.early > 0 && (
+                  <div style={{ color: '#86efac' }}>🎉 Завершено на {timing.early} дн. раньше!</div>
+                )}
+                {timing.delay > 0 && (
+                  <div style={{ color: '#fca5a5' }}>⚠️ Опоздание на {timing.delay} дн.</div>
+                )}
+                {timing.earlyStart > 0 && (
+                  <div style={{ color: '#67e8f9' }}>▶ Начато на {timing.earlyStart} дн. раньше</div>
+                )}
+                {timing.lateStart > 0 && (
+                  <div style={{ color: '#fcd34d' }}>▶ Начато на {timing.lateStart} дн. позже</div>
+                )}
+                {critical && <div style={{ color: '#fdba74' }}>🔥 Критический путь</div>}
+              </div>
             )}
-            {timing.delay > 0 && (
-              <div style={{ color: '#fca5a5', marginTop: '2px' }}>⚠️ Опоздание на {timing.delay} дн.</div>
-            )}
-            {timing.earlyStart > 0 && (
-              <div style={{ color: '#67e8f9', marginTop: '2px' }}>▶ Начато на {timing.earlyStart} дн. раньше</div>
-            )}
-            {timing.lateStart > 0 && (
-              <div style={{ color: '#fcd34d', marginTop: '2px' }}>▶ Начато на {timing.lateStart} дн. позже</div>
-            )}
-            {critical && <div style={{ color: '#fdba74', marginTop: '2px' }}>🔥 Критический путь</div>}
           </div>
         )}
       </div>
@@ -1033,35 +1157,8 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
             >
               <option value="date">📅 По дате (сначала ранние)</option>
               <option value="date-desc">📅 По дате (сначала поздние)</option>
-              <option value="name">🔤 По названию</option>
               <option value="stage">🏗️ По этапу</option>
               <option value="type">📁 По отделу</option>
-              <option value="city">🏙️ По объекту</option>
-              <option value="duration">⏱️ По длительности</option>
-            </select>
-          </div>
-
-          {/* Фильтр по году */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '12px', color: '#64748b' }}>Год:</span>
-            <select
-              value={yearFilter}
-              onChange={(e) => setYearFilter(e.target.value)}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: '1px solid #e2e8f0',
-                background: '#fff',
-                fontSize: '13px',
-                color: '#1e293b',
-                cursor: 'pointer',
-                minWidth: '120px'
-              }}
-            >
-              <option value="all">📅 Все годы</option>
-              {availableYears.map(year => (
-                <option key={year} value={year}>{year}</option>
-              ))}
             </select>
           </div>
 
@@ -1085,6 +1182,321 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
           </button>
         </div>
       </div>
+
+      {/* Панель фильтров - годы и этапы */}
+      <div style={{
+        display: 'flex',
+        gap: '24px',
+        marginBottom: '16px',
+        padding: '16px 20px',
+        background: '#f8fafc',
+        borderRadius: '12px',
+        border: '1px solid #e2e8f0',
+        flexWrap: 'wrap',
+        alignItems: 'center'
+      }}>
+        {/* Двойной слайдер годов */}
+        {availableYears.length > 0 && (
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column',
+            gap: '8px',
+            minWidth: '280px',
+            flex: 1,
+            maxWidth: '400px'
+          }}>
+            {/* Заголовок с диапазоном */}
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'space-between'
+            }}>
+              <span style={{ 
+                fontSize: '13px', 
+                fontWeight: '600', 
+                color: '#1e293b'
+              }}>
+                {yearRangeStart || minYear} — {yearRangeEnd || maxYear}
+              </span>
+            </div>
+            
+            {/* Слайдер с кнопками */}
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '12px'
+            }}>
+              {/* Кнопка уменьшения года */}
+              <button
+                onClick={() => {
+                  if (yearRangeStart > minYear) {
+                    setYearRangeStart(yearRangeStart - 1);
+                  }
+                }}
+                disabled={yearRangeStart <= minYear}
+                style={{
+                  padding: '6px 10px',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '6px',
+                  background: yearRangeStart <= minYear ? '#f1f5f9' : '#fff',
+                  color: yearRangeStart <= minYear ? '#94a3b8' : '#64748b',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  cursor: yearRangeStart <= minYear ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                − год
+              </button>
+              
+              {/* Контейнер слайдера */}
+              <div style={{ 
+                flex: 1, 
+                position: 'relative',
+                height: '40px',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center'
+              }}>
+                {/* Фоновая полоса */}
+                <div style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  height: '6px',
+                  background: '#e2e8f0',
+                  borderRadius: '3px',
+                  top: '50%',
+                  transform: 'translateY(-50%)'
+                }} />
+                
+                {/* Активная полоса между ручками */}
+                <div style={{
+                  position: 'absolute',
+                  left: `${((yearRangeStart || minYear) - minYear) / Math.max(1, maxYear - minYear) * 100}%`,
+                  right: `${100 - ((yearRangeEnd || maxYear) - minYear) / Math.max(1, maxYear - minYear) * 100}%`,
+                  height: '6px',
+                  background: 'linear-gradient(90deg, #3b82f6, #60a5fa)',
+                  borderRadius: '3px',
+                  top: '50%',
+                  transform: 'translateY(-50%)'
+                }} />
+                
+                {/* Слайдер начала */}
+                <input
+                  type="range"
+                  min={minYear}
+                  max={maxYear}
+                  value={yearRangeStart || minYear}
+                  onChange={(e) => {
+                    const newValue = parseInt(e.target.value);
+                    if (newValue <= (yearRangeEnd || maxYear)) {
+                      setYearRangeStart(newValue);
+                    }
+                  }}
+                  style={{
+                    position: 'absolute',
+                    width: '100%',
+                    height: '40px',
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    WebkitAppearance: 'none',
+                    appearance: 'none',
+                    pointerEvents: 'none',
+                    zIndex: 3
+                  }}
+                  className="year-range-slider"
+                />
+                
+                {/* Слайдер конца */}
+                <input
+                  type="range"
+                  min={minYear}
+                  max={maxYear}
+                  value={yearRangeEnd || maxYear}
+                  onChange={(e) => {
+                    const newValue = parseInt(e.target.value);
+                    if (newValue >= (yearRangeStart || minYear)) {
+                      setYearRangeEnd(newValue);
+                    }
+                  }}
+                  style={{
+                    position: 'absolute',
+                    width: '100%',
+                    height: '40px',
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    WebkitAppearance: 'none',
+                    appearance: 'none',
+                    pointerEvents: 'none',
+                    zIndex: 4
+                  }}
+                  className="year-range-slider"
+                />
+                
+                {/* Метки годов под слайдером */}
+                <div style={{
+                  position: 'absolute',
+                  bottom: '-2px',
+                  left: 0,
+                  right: 0,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '10px',
+                  color: '#94a3b8'
+                }}>
+                  <span>{minYear}</span>
+                  <span>{maxYear}</span>
+                </div>
+              </div>
+              
+              {/* Кнопка увеличения года */}
+              <button
+                onClick={() => {
+                  if (yearRangeEnd < maxYear) {
+                    setYearRangeEnd(yearRangeEnd + 1);
+                  }
+                }}
+                disabled={yearRangeEnd >= maxYear}
+                style={{
+                  padding: '6px 10px',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '6px',
+                  background: yearRangeEnd >= maxYear ? '#f1f5f9' : '#fff',
+                  color: yearRangeEnd >= maxYear ? '#94a3b8' : '#64748b',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  cursor: yearRangeEnd >= maxYear ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                + год
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Разделитель */}
+        <div style={{ width: '1px', height: '50px', background: '#e2e8f0' }} />
+
+        {/* Фильтр по этапу строительства */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '250px' }}>
+          <span style={{ 
+            fontSize: '12px', 
+            fontWeight: '600', 
+            color: '#64748b',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            whiteSpace: 'nowrap'
+          }}>
+            🏗️ Этап:
+          </span>
+          <select
+            value={stageFilter}
+            onChange={(e) => setStageFilter(e.target.value)}
+            style={{
+              padding: '8px 12px',
+              borderRadius: '8px',
+              border: '1px solid #e2e8f0',
+              background: stageFilter ? '#eff6ff' : '#fff',
+              fontSize: '13px',
+              color: '#1e293b',
+              cursor: 'pointer',
+              flex: 1,
+              maxWidth: '350px',
+              fontWeight: stageFilter ? '500' : 'normal'
+            }}
+          >
+            <option value="">Все этапы</option>
+            {stages.map((stage) => (
+              <option key={stage.id} value={stage.name}>
+                {stage.order_index + 1}. {stage.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Счётчик и сброс */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ 
+            fontSize: '12px', 
+            color: '#64748b',
+            background: '#e2e8f0',
+            padding: '4px 10px',
+            borderRadius: '12px'
+          }}>
+            Показано: <strong style={{ color: '#1e293b' }}>{filteredTasks.length}</strong> / {tasks.length}
+          </span>
+          
+          {((yearRangeStart !== minYear || yearRangeEnd !== maxYear) || stageFilter) && (
+            <button
+              onClick={() => {
+                setYearRangeStart(minYear);
+                setYearRangeEnd(maxYear);
+                setStageFilter('');
+              }}
+              style={{
+                padding: '6px 12px',
+                border: 'none',
+                borderRadius: '6px',
+                background: '#fee2e2',
+                color: '#dc2626',
+                fontSize: '12px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              ✕ Сбросить
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Стили для слайдеров */}
+      <style>{`
+        .year-range-slider::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 20px;
+          height: 20px;
+          background: #fff;
+          border: 2px solid #3b82f6;
+          border-radius: 50%;
+          cursor: pointer;
+          pointer-events: auto;
+          box-shadow: 0 2px 6px rgba(59, 130, 246, 0.3);
+          transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .year-range-slider::-webkit-slider-thumb:hover {
+          transform: scale(1.15);
+          box-shadow: 0 3px 8px rgba(59, 130, 246, 0.4);
+        }
+        .year-range-slider::-moz-range-thumb {
+          width: 20px;
+          height: 20px;
+          background: #fff;
+          border: 2px solid #3b82f6;
+          border-radius: 50%;
+          cursor: pointer;
+          pointer-events: auto;
+          box-shadow: 0 2px 6px rgba(59, 130, 246, 0.3);
+        }
+        .year-range-slider::-webkit-slider-runnable-track {
+          height: 6px;
+          background: transparent;
+        }
+        .year-range-slider::-moz-range-track {
+          height: 6px;
+          background: transparent;
+        }
+      `}</style>
 
       {/* Информация о КП */}
       {showCriticalPath && (cpmData.criticalTaskIds?.length > 0 || cpmData.criticalStages?.length > 0) && (
@@ -1202,6 +1614,31 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
                   boxShadow: isCritical(task) ? '0 0 0 2px #f97316' : 'none'
                 }} />
                 <div style={{ minWidth: 0, flex: 1 }}>
+                  {/* Этап строительства - всегда показываем */}
+                  <div style={{
+                    fontSize: '10px',
+                    fontWeight: '600',
+                    color: task.color.border,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    marginBottom: '2px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}>
+                    <span style={{
+                      background: task.color.bg,
+                      padding: '1px 5px',
+                      borderRadius: '4px',
+                      fontSize: '9px'
+                    }}>
+                      {typeNames[task.type]}
+                    </span>
+                    <span style={{ color: '#64748b' }}>•</span>
+                    <span>{task.constructionStage}</span>
+                  </div>
+                  {/* Название работы */}
                   <div style={{
                     fontSize: '12px',
                     fontWeight: '500',
@@ -1210,17 +1647,16 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
                     overflow: 'hidden',
                     textOverflow: 'ellipsis'
                   }}>
-                    {task.workName || task.constructionStage}
+                    {task.workName || '—'}
                   </div>
+                  {/* Даты */}
                   <div style={{
-                    fontSize: '10px',
+                    fontSize: '9px',
                     color: '#64748b',
                     display: 'flex',
-                    gap: '6px',
-                    marginTop: '2px'
+                    gap: '4px',
+                    marginTop: '1px'
                   }}>
-                    <span>{typeNames[task.type]}</span>
-                    <span>•</span>
                     {task.actualStart ? (
                       <span style={{ color: '#8bc49a' }}>
                         ✓ {formatDateShort(task.actualStart)} - {formatDateShort(task.actualEnd || task.plannedEnd)}

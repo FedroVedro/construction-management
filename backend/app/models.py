@@ -12,7 +12,11 @@ class User(Base):
     hashed_password = Column(String)
     role = Column(String)  # admin, director, department_user
     department = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True)  # Активен ли аккаунт
+    # Разрешения в формате JSON: {"view": ["hr", "construction"], "edit": ["hr"]}
+    permissions = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     schedules = relationship("Schedule", back_populates="creator")
 
