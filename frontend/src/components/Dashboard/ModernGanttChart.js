@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import client from '../../api/client';
 import { formatDate as formatDateUtil } from '../../utils/dateParser';
+import { useTheme } from '../../context/ThemeContext';
 
 const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUpdate }) => {
+  const { isDark } = useTheme();
   const [tasks, setTasks] = useState([]);
   const [viewMode, setViewMode] = useState(selectedView || 'all');
   const [timeScale, setTimeScale] = useState('week');
@@ -17,12 +19,15 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
   const [syncCount, setSyncCount] = useState(0); // Счётчик активных операций синхронизации
   const isSyncing = syncCount > 0; // Индикатор синхронизации (вычисляемое значение)
   const [yearFilter, setYearFilter] = useState('all'); // Фильтр по году
+  const [startYear, setStartYear] = useState(2022); // Начальный год диапазона
+  const [endYear, setEndYear] = useState(2028); // Конечный год диапазона
   
   const sidebarRef = useRef(null);
   const timelineBodyRef = useRef(null);
   const timelineHeaderRef = useRef(null);
   const rafRef = useRef(null); // Для requestAnimationFrame
   const pendingUpdateRef = useRef(null); // Для хранения отложенного обновления
+  const yearsInitializedRef = useRef(false); // Флаг инициализации годов
 
   // Константы
   const ROW_HEIGHT = 50;
@@ -87,7 +92,28 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     }
   };
 
-  // Доступные годы из задач
+  // Границы диапазона годов (мин/макс из данных с запасом)
+  const yearRangeLimits = useMemo(() => {
+    if (tasks.length === 0) return { min: 2018, max: 2035 };
+    const years = new Set();
+    tasks.forEach(task => {
+      if (task.plannedStart) years.add(task.plannedStart.getFullYear());
+      if (task.plannedEnd) years.add(task.plannedEnd.getFullYear());
+      if (task.actualStart) years.add(task.actualStart.getFullYear());
+      if (task.actualEnd) years.add(task.actualEnd.getFullYear());
+    });
+    const yearsArray = Array.from(years);
+    if (yearsArray.length === 0) return { min: 2018, max: 2035 };
+    
+    const minYear = Math.min(...yearsArray);
+    const maxYear = Math.max(...yearsArray);
+    return {
+      min: Math.max(2018, minYear - 2), // С запасом -2 года
+      max: Math.min(2035, maxYear + 2)  // С запасом +2 года
+    };
+  }, [tasks]);
+
+  // Доступные годы из задач (для выпадающего списка)
   const availableYears = useMemo(() => {
     if (tasks.length === 0) return [];
     const years = new Set();
@@ -100,45 +126,76 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     return Array.from(years).sort((a, b) => a - b);
   }, [tasks]);
 
-  // Фильтруем задачи по году
+  // Инициализация startYear и endYear на основе данных (только один раз)
+  useEffect(() => {
+    if (availableYears.length > 0 && !yearsInitializedRef.current) {
+      const minYear = availableYears[0];
+      const maxYear = availableYears[availableYears.length - 1];
+      setStartYear(minYear);
+      setEndYear(maxYear);
+      yearsInitializedRef.current = true; // Помечаем как инициализированные
+    }
+  }, [availableYears]);
+
+  // Фильтруем задачи по году или диапазону
   const filteredTasks = useMemo(() => {
-    if (yearFilter === 'all') return tasks;
-    const year = parseInt(yearFilter);
     return tasks.filter(task => {
-      // Показываем задачу если хотя бы одна из её дат попадает в выбранный год
-      const startYear = task.plannedStart?.getFullYear();
-      const endYear = task.plannedEnd?.getFullYear();
+      const taskStartYear = task.plannedStart?.getFullYear();
+      const taskEndYear = task.plannedEnd?.getFullYear();
       const actualStartYear = task.actualStart?.getFullYear();
       const actualEndYear = task.actualEnd?.getFullYear();
       
-      return startYear === year || endYear === year || 
-             actualStartYear === year || actualEndYear === year ||
-             (startYear && endYear && startYear <= year && endYear >= year);
+      // Если выбран конкретный год
+      if (yearFilter !== 'all') {
+        const year = parseInt(yearFilter);
+        return taskStartYear === year || taskEndYear === year || 
+               actualStartYear === year || actualEndYear === year ||
+               (taskStartYear && taskEndYear && taskStartYear <= year && taskEndYear >= year);
+      }
+      
+      // Если выбран диапазон (yearFilter === 'all')
+      // Показываем задачи, которые попадают в диапазон startYear - endYear
+      const hasOverlap = (taskStart, taskEnd) => {
+        if (!taskStart || !taskEnd) return false;
+        return taskEnd >= startYear && taskStart <= endYear;
+      };
+      
+      return hasOverlap(taskStartYear, taskEndYear) || 
+             hasOverlap(actualStartYear, actualEndYear) ||
+             (taskStartYear >= startYear && taskStartYear <= endYear) ||
+             (taskEndYear >= startYear && taskEndYear <= endYear);
     });
-  }, [tasks, yearFilter]);
+  }, [tasks, yearFilter, startYear, endYear]);
 
   // Временной диапазон
   const timeRange = useMemo(() => {
-    if (filteredTasks.length === 0) return { start: new Date(), end: new Date(), days: 0 };
+    let minDate, maxDate;
     
-    let minDate = new Date(Math.min(...filteredTasks.map(t => t.plannedStart.getTime())));
-    let maxDate = new Date(Math.max(...filteredTasks.map(t => t.plannedEnd.getTime())));
-    
-    // Если фильтр по году активен, ограничиваем диапазон этим годом
+    // Если фильтр по конкретному году активен
     if (yearFilter !== 'all') {
       const year = parseInt(yearFilter);
-      const yearStart = new Date(year, 0, 1);
-      const yearEnd = new Date(year, 11, 31);
-      minDate = minDate < yearStart ? yearStart : minDate;
-      maxDate = maxDate > yearEnd ? yearEnd : maxDate;
+      // СТРОГО ограничиваем год - не выходим за его пределы
+      minDate = new Date(year, 0, 1);
+      maxDate = new Date(year, 11, 31);
+    } else {
+      // Если показываем диапазон годов через слайдеры
+      // СТРОГО ограничиваем диапазон startYear - endYear
+      minDate = new Date(startYear, 0, 1);
+      maxDate = new Date(endYear, 11, 31);
     }
     
-    minDate = new Date(minDate.getFullYear(), minDate.getMonth() - 1, 1);
-    maxDate = new Date(maxDate.getFullYear(), maxDate.getMonth() + 2, 0);
+    // Добавляем запас: месяц до и 2 месяца после
+    // Но не выходим за пределы выбранного диапазона
+    const bufferedMin = new Date(minDate.getFullYear(), minDate.getMonth() - 1, 1);
+    const bufferedMax = new Date(maxDate.getFullYear(), maxDate.getMonth() + 2, 0);
     
-    const days = Math.ceil((maxDate - minDate) / (1000 * 60 * 60 * 24));
-    return { start: minDate, end: maxDate, days };
-  }, [filteredTasks, yearFilter]);
+    // Проверяем, что запас не выходит за пределы диапазона
+    const finalMin = bufferedMin < minDate && yearFilter === 'all' ? minDate : bufferedMin;
+    const finalMax = bufferedMax > maxDate && yearFilter === 'all' ? maxDate : bufferedMax;
+    
+    const days = Math.ceil((finalMax - finalMin) / (1000 * 60 * 60 * 24));
+    return { start: finalMin, end: finalMax, days };
+  }, [yearFilter, startYear, endYear]);
 
   // Заголовки месяцев
   const monthHeaders = useMemo(() => {
@@ -870,23 +927,35 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
               +{stageFloat}д резерв
             </div>
           )}
-        </div>
 
-        {/* Ручки resize */}
-        <div
-          style={{
-            position: 'absolute', left: 0, top: 0, width: '8px', height: '100%',
-            cursor: 'ew-resize', borderRadius: '4px 0 0 4px'
-          }}
-          onMouseDown={(e) => handleMouseDown(e, task, 'resize-start')}
-        />
-        <div
-          style={{
-            position: 'absolute', right: 0, top: 0, width: '8px', height: '100%',
-            cursor: 'ew-resize', borderRadius: '0 4px 4px 0'
-          }}
-          onMouseDown={(e) => handleMouseDown(e, task, 'resize-end')}
-        />
+          {/* Ручки resize - теперь внутри фактического блока */}
+          <div
+            style={{
+              position: 'absolute', 
+              left: 0, 
+              top: 0, 
+              width: '8px', 
+              height: '100%',
+              cursor: 'ew-resize', 
+              borderRadius: '4px 0 0 4px',
+              zIndex: 10
+            }}
+            onMouseDown={(e) => handleMouseDown(e, task, 'resize-start')}
+          />
+          <div
+            style={{
+              position: 'absolute', 
+              right: 0, 
+              top: 0, 
+              width: '8px', 
+              height: '100%',
+              cursor: 'ew-resize', 
+              borderRadius: '0 4px 4px 0',
+              zIndex: 10
+            }}
+            onMouseDown={(e) => handleMouseDown(e, task, 'resize-end')}
+          />
+        </div>
 
         {/* Фактическое выполнение */}
         {task.actualStart && (
@@ -1042,18 +1111,25 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
           </div>
 
           {/* Фильтр по году */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '12px', color: '#64748b' }}>Год:</span>
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '12px',
+            padding: '8px 16px',
+            background: isDark ? 'rgba(30, 41, 59, 0.5)' : '#f8fafc',
+            borderRadius: '8px',
+            border: `1px solid ${isDark ? 'rgba(148, 163, 184, 0.2)' : '#e2e8f0'}`
+          }}>
             <select
               value={yearFilter}
               onChange={(e) => setYearFilter(e.target.value)}
               style={{
                 padding: '6px 12px',
                 borderRadius: '6px',
-                border: '1px solid #e2e8f0',
-                background: '#fff',
+                border: `1px solid ${isDark ? 'rgba(148, 163, 184, 0.3)' : '#e2e8f0'}`,
+                background: isDark ? 'rgba(30, 41, 59, 0.8)' : '#fff',
                 fontSize: '13px',
-                color: '#1e293b',
+                color: isDark ? '#e2e8f0' : '#1e293b',
                 cursor: 'pointer',
                 minWidth: '120px'
               }}
@@ -1063,6 +1139,90 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
                 <option key={year} value={year}>{year}</option>
               ))}
             </select>
+
+            {yearFilter === 'all' && (
+              <div style={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: 6,
+                minWidth: 220
+              }}>
+                <div style={{ 
+                  fontSize: 11, 
+                  fontWeight: 600, 
+                  color: isDark ? '#94a3b8' : '#64748b', 
+                  textAlign: 'center' 
+                }}>
+                  {startYear} — {endYear}
+                </div>
+                
+                {/* Начальный год */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <label style={{ 
+                    fontSize: 9, 
+                    color: isDark ? '#64748b' : '#94a3b8', 
+                    textAlign: 'left' 
+                  }}>
+                    Начало: {startYear}
+                  </label>
+                  <input
+                    type="range"
+                    min={yearRangeLimits.min}
+                    max={yearRangeLimits.max}
+                    value={startYear}
+                    onChange={(e) => {
+                      const next = Math.min(parseInt(e.target.value, 10), endYear);
+                      setStartYear(next);
+                    }}
+                    style={{
+                      width: '100%',
+                      height: 4,
+                      borderRadius: 999,
+                      appearance: 'none',
+                      background: `linear-gradient(to right, 
+                        ${isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.3)'} 0%, 
+                        ${isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.3)'} ${((startYear - yearRangeLimits.min) / (yearRangeLimits.max - yearRangeLimits.min)) * 100}%, 
+                        ${isDark ? 'rgba(59, 130, 246, 0.8)' : 'rgba(59, 130, 246, 0.6)'} ${((startYear - yearRangeLimits.min) / (yearRangeLimits.max - yearRangeLimits.min)) * 100}%, 
+                        ${isDark ? 'rgba(59, 130, 246, 0.8)' : 'rgba(59, 130, 246, 0.6)'} 100%)`,
+                      cursor: 'pointer'
+                    }}
+                  />
+                </div>
+                
+                {/* Конечный год */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <label style={{ 
+                    fontSize: 9, 
+                    color: isDark ? '#64748b' : '#94a3b8', 
+                    textAlign: 'left' 
+                  }}>
+                    Конец: {endYear}
+                  </label>
+                  <input
+                    type="range"
+                    min={yearRangeLimits.min}
+                    max={yearRangeLimits.max}
+                    value={endYear}
+                    onChange={(e) => {
+                      const next = Math.max(parseInt(e.target.value, 10), startYear);
+                      setEndYear(next);
+                    }}
+                    style={{
+                      width: '100%',
+                      height: 4,
+                      borderRadius: 999,
+                      appearance: 'none',
+                      background: `linear-gradient(to right, 
+                        ${isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.3)'} 0%, 
+                        ${isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.3)'} ${((endYear - yearRangeLimits.min) / (yearRangeLimits.max - yearRangeLimits.min)) * 100}%, 
+                        ${isDark ? 'rgba(59, 130, 246, 0.8)' : 'rgba(59, 130, 246, 0.6)'} ${((endYear - yearRangeLimits.min) / (yearRangeLimits.max - yearRangeLimits.min)) * 100}%, 
+                        ${isDark ? 'rgba(59, 130, 246, 0.8)' : 'rgba(59, 130, 246, 0.6)'} 100%)`,
+                      cursor: 'pointer'
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           <button
