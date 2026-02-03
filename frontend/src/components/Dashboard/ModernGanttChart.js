@@ -145,6 +145,27 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     return Array.from(years).sort((a, b) => a - b);
   }, [tasks]);
 
+  // Находим самую раннюю и самую позднюю даты из всех задач
+  const earliestDate = useMemo(() => {
+    if (tasks.length === 0) return null;
+    const dates = [];
+    tasks.forEach(task => {
+      if (task.plannedStart) dates.push(task.plannedStart);
+      if (task.actualStart) dates.push(task.actualStart);
+    });
+    return dates.length > 0 ? new Date(Math.min(...dates.map(d => d.getTime()))) : null;
+  }, [tasks]);
+
+  const latestDate = useMemo(() => {
+    if (tasks.length === 0) return null;
+    const dates = [];
+    tasks.forEach(task => {
+      if (task.plannedEnd) dates.push(task.plannedEnd);
+      if (task.actualEnd) dates.push(task.actualEnd);
+    });
+    return dates.length > 0 ? new Date(Math.max(...dates.map(d => d.getTime()))) : null;
+  }, [tasks]);
+
   // Инициализация диапазона годов на основе данных
   useEffect(() => {
     if (availableYears.length > 0) {
@@ -213,23 +234,31 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
       maxDate = new Date(year, 11, 31);
     } else {
       // Если показываем диапазон годов через слайдеры
-      // СТРОГО ограничиваем диапазон activeStartYear - activeEndYear
-      minDate = new Date(activeStartYear, 0, 1);
-      maxDate = new Date(activeEndYear, 11, 31);
+      // Всегда используем месяц самой ранней задачи для начала диапазона
+      if (earliestDate) {
+        minDate = new Date(earliestDate.getFullYear(), earliestDate.getMonth(), 1);
+      } else {
+        minDate = new Date(activeStartYear, 0, 1);
+      }
+      
+      // Всегда используем месяц самой поздней задачи для конца диапазона
+      if (latestDate) {
+        maxDate = new Date(latestDate.getFullYear(), latestDate.getMonth() + 1, 0);
+      } else {
+        maxDate = new Date(activeEndYear, 11, 31);
+      }
     }
     
-    // Добавляем запас: месяц до и 2 месяца после
-    // Но не выходим за пределы выбранного диапазона
+    // Добавляем небольшой запас для лучшей визуализации
     const bufferedMin = new Date(minDate.getFullYear(), minDate.getMonth() - 1, 1);
     const bufferedMax = new Date(maxDate.getFullYear(), maxDate.getMonth() + 2, 0);
     
-    // Проверяем, что запас не выходит за пределы диапазона
-    const finalMin = bufferedMin < minDate && yearFilter === 'all' ? minDate : bufferedMin;
-    const finalMax = bufferedMax > maxDate && yearFilter === 'all' ? maxDate : bufferedMax;
+    const finalMin = bufferedMin;
+    const finalMax = bufferedMax;
     
     const days = Math.ceil((finalMax - finalMin) / (1000 * 60 * 60 * 24));
     return { start: finalMin, end: finalMax, days };
-  }, [yearFilter, activeStartYear, activeEndYear]);
+  }, [yearFilter, activeStartYear, activeEndYear, earliestDate, latestDate]);
 
   // Заголовки месяцев
   const monthHeaders = useMemo(() => {
