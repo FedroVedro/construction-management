@@ -14,7 +14,11 @@ const PAGE_NAMES = {
   'directive-schedule': 'Директивный график',
   'marketing-schedule': 'График маркетинга и продаж',
   'project-office': 'Проектный офис',
-  'telegram-settings': 'Настройки Telegram'
+  'telegram-settings': 'Настройки Telegram',
+  'admin': 'Админ-панель',
+  'strategic-map': 'Мастер-карта',
+  'process-management': 'Процесс управления',
+  'dependency-manager': 'Зависимости задач'
 };
 
 const Breadcrumbs = () => {
@@ -87,7 +91,11 @@ const getPageIcon = (path) => {
     'directive-schedule': '📊',
     'marketing-schedule': '📈',
     'project-office': '📁',
-    'telegram-settings': '📱'
+    'telegram-settings': '📱',
+    'admin': '👑',
+    'strategic-map': '🗺️',
+    'process-management': '⚙️',
+    'dependency-manager': '🔗'
   };
   return icons[path] || '📌';
 };

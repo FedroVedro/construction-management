@@ -19,12 +19,39 @@ def create_user(db: Session, user: schemas.UserCreate):
         email=user.email,
         hashed_password=hashed_password,
         role=user.role,
-        department=user.department
+        department=user.department,
+        is_active=user.is_active if user.is_active is not None else True,
+        permissions=user.permissions
     )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
     return db_user
+
+def update_user(db: Session, user_id: int, user_update: schemas.UserUpdate):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if db_user:
+        update_data = user_update.dict(exclude_unset=True)
+        # Если указан новый пароль - хешируем его
+        if 'password' in update_data and update_data['password']:
+            update_data['hashed_password'] = auth.get_password_hash(update_data['password'])
+            del update_data['password']
+        elif 'password' in update_data:
+            del update_data['password']
+        
+        for field, value in update_data.items():
+            setattr(db_user, field, value)
+        db.commit()
+        db.refresh(db_user)
+    return db_user
+
+def delete_user(db: Session, user_id: int):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if db_user:
+        db.delete(db_user)
+        db.commit()
+        return True
+    return False
 
 def get_cities(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.City).offset(skip).limit(limit).all()

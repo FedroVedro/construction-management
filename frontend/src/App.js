@@ -20,6 +20,7 @@ import StrategicMap from './pages/StrategicMap';
 import TelegramSettings from './pages/TelegramSettings';
 import ProcessManagement from './pages/ProcessManagement';
 import DependencyManager from './pages/DependencyManager';
+import AdminPanel from './pages/AdminPanel';
 import './App.css';
 
 function App() {
@@ -46,6 +47,7 @@ function App() {
                   <Route path="process-management" element={<ProcessManagement />} />
                   <Route path="dependency-manager" element={<DependencyManager />} />
                   <Route path="telegram-settings" element={<TelegramSettings />} />
+                  <Route path="admin" element={<AdminPanel />} />
                 </Route>
               </Route>
             </Routes>

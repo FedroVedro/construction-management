@@ -7,13 +7,25 @@ class UserBase(BaseModel):
     email: EmailStr
     role: str
     department: Optional[str] = None
+    is_active: Optional[bool] = True
+    permissions: Optional[str] = None  # JSON string: {"view": [...], "edit": [...]}
 
 class UserCreate(UserBase):
     password: str
 
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None  # Если указан - обновляем пароль
+    role: Optional[str] = None
+    department: Optional[str] = None
+    is_active: Optional[bool] = None
+    permissions: Optional[str] = None
+
 class User(UserBase):
     id: int
     created_at: datetime
+    updated_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True
