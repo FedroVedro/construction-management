@@ -18,16 +18,11 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
   const [sortBy, setSortBy] = useState('stage'); // date, stage, type
   const [syncCount, setSyncCount] = useState(0); // Счётчик активных операций синхронизации
   const isSyncing = syncCount > 0; // Индикатор синхронизации (вычисляемое значение)
-<<<<<<< HEAD
   const [yearFilter, setYearFilter] = useState('all'); // Фильтр по году
   const [startYear, setStartYear] = useState(2022); // Начальный год диапазона
   const [endYear, setEndYear] = useState(2028); // Конечный год диапазона
-=======
-  const [yearRangeStart, setYearRangeStart] = useState(null); // Начальный год диапазона
-  const [yearRangeEnd, setYearRangeEnd] = useState(null); // Конечный год диапазона
   const [stageFilter, setStageFilter] = useState(''); // Фильтр по этапу строительства
   const [stages, setStages] = useState([]); // Список этапов строительства
->>>>>>> 3a190b79a507abfb27842a72f2bdda4feee7e4c7
   
   const sidebarRef = useRef(null);
   const timelineBodyRef = useRef(null);
@@ -99,7 +94,21 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     }
   };
 
-<<<<<<< HEAD
+  // Загрузка этапов строительства
+  useEffect(() => {
+    const fetchStages = async () => {
+      try {
+        const response = await client.get('/construction-stages?active_only=true');
+        // Сортируем по order_index для правильного порядка
+        const sortedStages = response.data.sort((a, b) => a.order_index - b.order_index);
+        setStages(sortedStages);
+      } catch (error) {
+        console.error('Error fetching stages:', error);
+      }
+    };
+    fetchStages();
+  }, []);
+
   // Границы диапазона годов (мин/макс из данных с запасом)
   const yearRangeLimits = useMemo(() => {
     if (tasks.length === 0) return { min: 2018, max: 2035 };
@@ -122,24 +131,6 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
   }, [tasks]);
 
   // Доступные годы из задач (для выпадающего списка)
-=======
-  // Загрузка этапов строительства
-  useEffect(() => {
-    const fetchStages = async () => {
-      try {
-        const response = await client.get('/construction-stages?active_only=true');
-        // Сортируем по order_index для правильного порядка
-        const sortedStages = response.data.sort((a, b) => a.order_index - b.order_index);
-        setStages(sortedStages);
-      } catch (error) {
-        console.error('Error fetching stages:', error);
-      }
-    };
-    fetchStages();
-  }, []);
-
-  // Доступные годы из задач
->>>>>>> 3a190b79a507abfb27842a72f2bdda4feee7e4c7
   const availableYears = useMemo(() => {
     if (tasks.length === 0) return [];
     const years = new Set();
@@ -152,21 +143,20 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     return Array.from(years).sort((a, b) => a - b);
   }, [tasks]);
 
-<<<<<<< HEAD
   // Инициализация startYear и endYear на основе данных (только один раз)
   useEffect(() => {
     if (availableYears.length > 0 && !yearsInitializedRef.current) {
-      const minYear = availableYears[0];
-      const maxYear = availableYears[availableYears.length - 1];
-      setStartYear(minYear);
-      setEndYear(maxYear);
+      const minYearVal = availableYears[0];
+      const maxYearVal = availableYears[availableYears.length - 1];
+      setStartYear(minYearVal);
+      setEndYear(maxYearVal);
       yearsInitializedRef.current = true; // Помечаем как инициализированные
     }
   }, [availableYears]);
 
-  // Фильтруем задачи по году или диапазону
+  // Фильтруем задачи по году или диапазону и по этапу строительства
   const filteredTasks = useMemo(() => {
-    return tasks.filter(task => {
+    let filtered = tasks.filter(task => {
       const taskStartYear = task.plannedStart?.getFullYear();
       const taskEndYear = task.plannedEnd?.getFullYear();
       const actualStartYear = task.actualStart?.getFullYear();
@@ -192,43 +182,6 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
              (taskStartYear >= startYear && taskStartYear <= endYear) ||
              (taskEndYear >= startYear && taskEndYear <= endYear);
     });
-  }, [tasks, yearFilter, startYear, endYear]);
-=======
-  // Инициализация диапазона годов при загрузке данных
-  useEffect(() => {
-    if (availableYears.length > 0 && yearRangeStart === null) {
-      setYearRangeStart(availableYears[0]);
-      setYearRangeEnd(availableYears[availableYears.length - 1]);
-    }
-  }, [availableYears, yearRangeStart]);
-
-  // Минимальный и максимальный годы
-  const minYear = availableYears.length > 0 ? availableYears[0] : new Date().getFullYear();
-  const maxYear = availableYears.length > 0 ? availableYears[availableYears.length - 1] : new Date().getFullYear();
-
-  // Фильтруем задачи по диапазону годов и этапу строительства
-  const filteredTasks = useMemo(() => {
-    let filtered = tasks;
-    
-    // Фильтр по диапазону годов
-    if (yearRangeStart !== null && yearRangeEnd !== null) {
-      filtered = filtered.filter(task => {
-        // Показываем задачу если она пересекается с выбранным диапазоном годов
-        const startYear = task.plannedStart?.getFullYear();
-        const endYear = task.plannedEnd?.getFullYear();
-        const actualStartYear = task.actualStart?.getFullYear();
-        const actualEndYear = task.actualEnd?.getFullYear();
-        
-        // Задача попадает в диапазон если хотя бы одна из дат попадает
-        const plannedInRange = (startYear && startYear >= yearRangeStart && startYear <= yearRangeEnd) ||
-                               (endYear && endYear >= yearRangeStart && endYear <= yearRangeEnd) ||
-                               (startYear && endYear && startYear <= yearRangeStart && endYear >= yearRangeEnd);
-        const actualInRange = (actualStartYear && actualStartYear >= yearRangeStart && actualStartYear <= yearRangeEnd) ||
-                              (actualEndYear && actualEndYear >= yearRangeStart && actualEndYear <= yearRangeEnd);
-        
-        return plannedInRange || actualInRange;
-      });
-    }
     
     // Фильтр по этапу строительства
     if (stageFilter) {
@@ -236,14 +189,12 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     }
     
     return filtered;
-  }, [tasks, yearRangeStart, yearRangeEnd, stageFilter]);
->>>>>>> 3a190b79a507abfb27842a72f2bdda4feee7e4c7
+  }, [tasks, yearFilter, startYear, endYear, stageFilter]);
 
   // Временной диапазон
   const timeRange = useMemo(() => {
     let minDate, maxDate;
     
-<<<<<<< HEAD
     // Если фильтр по конкретному году активен
     if (yearFilter !== 'all') {
       const year = parseInt(yearFilter);
@@ -255,18 +206,6 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
       // СТРОГО ограничиваем диапазон startYear - endYear
       minDate = new Date(startYear, 0, 1);
       maxDate = new Date(endYear, 11, 31);
-=======
-    let minDate = new Date(Math.min(...filteredTasks.map(t => t.plannedStart.getTime())));
-    let maxDate = new Date(Math.max(...filteredTasks.map(t => t.plannedEnd.getTime())));
-    
-    // Если фильтр по диапазону годов активен, ограничиваем диапазон
-    if (yearRangeStart !== null && yearRangeEnd !== null && 
-        (yearRangeStart !== minYear || yearRangeEnd !== maxYear)) {
-      const yearStart = new Date(yearRangeStart, 0, 1);
-      const yearEnd = new Date(yearRangeEnd, 11, 31);
-      minDate = minDate < yearStart ? yearStart : minDate;
-      maxDate = maxDate > yearEnd ? yearEnd : maxDate;
->>>>>>> 3a190b79a507abfb27842a72f2bdda4feee7e4c7
     }
     
     // Добавляем запас: месяц до и 2 месяца после
@@ -274,7 +213,6 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     const bufferedMin = new Date(minDate.getFullYear(), minDate.getMonth() - 1, 1);
     const bufferedMax = new Date(maxDate.getFullYear(), maxDate.getMonth() + 2, 0);
     
-<<<<<<< HEAD
     // Проверяем, что запас не выходит за пределы диапазона
     const finalMin = bufferedMin < minDate && yearFilter === 'all' ? minDate : bufferedMin;
     const finalMax = bufferedMax > maxDate && yearFilter === 'all' ? maxDate : bufferedMax;
@@ -282,11 +220,6 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     const days = Math.ceil((finalMax - finalMin) / (1000 * 60 * 60 * 24));
     return { start: finalMin, end: finalMax, days };
   }, [yearFilter, startYear, endYear]);
-=======
-    const days = Math.ceil((maxDate - minDate) / (1000 * 60 * 60 * 24));
-    return { start: minDate, end: maxDate, days };
-  }, [filteredTasks, yearRangeStart, yearRangeEnd, minYear, maxYear]);
->>>>>>> 3a190b79a507abfb27842a72f2bdda4feee7e4c7
 
   // Заголовки месяцев
   const monthHeaders = useMemo(() => {
@@ -1274,7 +1207,6 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
               <option value="date-desc">📅 По дате (сначала поздние)</option>
               <option value="stage">🏗️ По этапу</option>
               <option value="type">📁 По отделу</option>
-<<<<<<< HEAD
               <option value="city">🏙️ По объекту</option>
               <option value="duration">⏱️ По длительности</option>
             </select>
@@ -1308,8 +1240,6 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
               {availableYears.map(year => (
                 <option key={year} value={year}>{year}</option>
               ))}
-=======
->>>>>>> 3a190b79a507abfb27842a72f2bdda4feee7e4c7
             </select>
 
             {yearFilter === 'all' && (
