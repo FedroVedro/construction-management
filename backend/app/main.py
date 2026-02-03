@@ -1,11 +1,64 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from . import models
-from .database import engine
+from . import models, auth as auth_module
+from .database import engine, SessionLocal
 from .routers import auth, users, cities, schedules, dashboard, construction_stages, project_office, strategic_map, process_management, dependencies
 
 # Создание таблиц
 models.Base.metadata.create_all(bind=engine)
+
+# Инициализация admin пользователя при запуске (использует raw SQL для совместимости)
+def init_admin_user():
+    import sqlite3
+    try:
+        conn = sqlite3.connect('database.db')
+        cursor = conn.cursor()
+        
+        # Проверяем и добавляем все недостающие колонки в таблице users
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        missing_columns = {
+            'permissions': 'TEXT',
+            'created_at': 'DATETIME',
+            'updated_at': 'DATETIME',
+            'is_active': 'BOOLEAN DEFAULT 1',
+            'department': 'TEXT'
+        }
+        
+        for col_name, col_type in missing_columns.items():
+            if col_name not in columns:
+                cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
+                print(f"Added '{col_name}' column to users table")
+        
+        conn.commit()
+        
+        # Проверяем существует ли admin
+        cursor.execute("SELECT id FROM users WHERE username = 'admin'")
+        admin = cursor.fetchone()
+        
+        # Генерируем хеш пароля
+        password_hash = auth_module.get_password_hash("admin123")
+        
+        if not admin:
+            cursor.execute(
+                "INSERT INTO users (username, email, hashed_password, role, is_active) VALUES (?, ?, ?, ?, ?)",
+                ('admin', 'admin@construction.com', password_hash, 'admin', 1)
+            )
+            print("Admin user created: admin / admin123")
+        else:
+            cursor.execute(
+                "UPDATE users SET hashed_password = ?, is_active = 1 WHERE username = 'admin'",
+                (password_hash,)
+            )
+            print("Admin user password reset: admin / admin123")
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error initializing admin: {e}")
+
+init_admin_user()
 
 app = FastAPI(title="Construction Management API")
 

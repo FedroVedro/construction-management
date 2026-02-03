@@ -19,8 +19,8 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
   const [syncCount, setSyncCount] = useState(0); // Счётчик активных операций синхронизации
   const isSyncing = syncCount > 0; // Индикатор синхронизации (вычисляемое значение)
   const [yearFilter, setYearFilter] = useState('all'); // Фильтр по году
-  const [startYear, setStartYear] = useState(2022); // Начальный год диапазона
-  const [endYear, setEndYear] = useState(2028); // Конечный год диапазона
+  const [startYear, setStartYear] = useState(null); // Начальный год диапазона
+  const [endYear, setEndYear] = useState(null); // Конечный год диапазона
   const [stageFilter, setStageFilter] = useState(''); // Фильтр по этапу строительства
   const [stages, setStages] = useState([]); // Список этапов строительства
   
@@ -29,7 +29,6 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
   const timelineHeaderRef = useRef(null);
   const rafRef = useRef(null); // Для requestAnimationFrame
   const pendingUpdateRef = useRef(null); // Для хранения отложенного обновления
-  const yearsInitializedRef = useRef(false); // Флаг инициализации годов
 
   // Константы
   const ROW_HEIGHT = 56;
@@ -130,6 +129,9 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     };
   }, [tasks]);
 
+  const minYear = yearRangeLimits.min;
+  const maxYear = yearRangeLimits.max;
+
   // Доступные годы из задач (для выпадающего списка)
   const availableYears = useMemo(() => {
     if (tasks.length === 0) return [];
@@ -143,16 +145,25 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     return Array.from(years).sort((a, b) => a - b);
   }, [tasks]);
 
-  // Инициализация startYear и endYear на основе данных (только один раз)
+  // Инициализация диапазона годов на основе данных
   useEffect(() => {
-    if (availableYears.length > 0 && !yearsInitializedRef.current) {
+    if (availableYears.length > 0) {
       const minYearVal = availableYears[0];
       const maxYearVal = availableYears[availableYears.length - 1];
-      setStartYear(minYearVal);
-      setEndYear(maxYearVal);
-      yearsInitializedRef.current = true; // Помечаем как инициализированные
+      
+      // Устанавливаем только если еще не установлены
+      if (startYear === null) {
+        setStartYear(minYearVal);
+      }
+      if (endYear === null) {
+        setEndYear(maxYearVal);
+      }
     }
-  }, [availableYears]);
+  }, [availableYears, startYear, endYear]);
+
+  // Используем вычисленные значения или дефолтные
+  const activeStartYear = startYear ?? 2022;
+  const activeEndYear = endYear ?? 2028;
 
   // Фильтруем задачи по году или диапазону и по этапу строительства
   const filteredTasks = useMemo(() => {
@@ -171,16 +182,15 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
       }
       
       // Если выбран диапазон (yearFilter === 'all')
-      // Показываем задачи, которые попадают в диапазон startYear - endYear
       const hasOverlap = (taskStart, taskEnd) => {
         if (!taskStart || !taskEnd) return false;
-        return taskEnd >= startYear && taskStart <= endYear;
+        return taskEnd >= activeStartYear && taskStart <= activeEndYear;
       };
       
       return hasOverlap(taskStartYear, taskEndYear) || 
              hasOverlap(actualStartYear, actualEndYear) ||
-             (taskStartYear >= startYear && taskStartYear <= endYear) ||
-             (taskEndYear >= startYear && taskEndYear <= endYear);
+             (taskStartYear >= activeStartYear && taskStartYear <= activeEndYear) ||
+             (taskEndYear >= activeStartYear && taskEndYear <= activeEndYear);
     });
     
     // Фильтр по этапу строительства
@@ -189,7 +199,7 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     }
     
     return filtered;
-  }, [tasks, yearFilter, startYear, endYear, stageFilter]);
+  }, [tasks, yearFilter, activeStartYear, activeEndYear, stageFilter]);
 
   // Временной диапазон
   const timeRange = useMemo(() => {
@@ -203,9 +213,9 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
       maxDate = new Date(year, 11, 31);
     } else {
       // Если показываем диапазон годов через слайдеры
-      // СТРОГО ограничиваем диапазон startYear - endYear
-      minDate = new Date(startYear, 0, 1);
-      maxDate = new Date(endYear, 11, 31);
+      // СТРОГО ограничиваем диапазон activeStartYear - activeEndYear
+      minDate = new Date(activeStartYear, 0, 1);
+      maxDate = new Date(activeEndYear, 11, 31);
     }
     
     // Добавляем запас: месяц до и 2 месяца после
@@ -219,7 +229,7 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     
     const days = Math.ceil((finalMax - finalMin) / (1000 * 60 * 60 * 24));
     return { start: finalMin, end: finalMax, days };
-  }, [yearFilter, startYear, endYear]);
+  }, [yearFilter, activeStartYear, activeEndYear]);
 
   // Заголовки месяцев
   const monthHeaders = useMemo(() => {
@@ -1242,89 +1252,6 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
               ))}
             </select>
 
-            {yearFilter === 'all' && (
-              <div style={{ 
-                display: 'flex', 
-                flexDirection: 'column', 
-                gap: 6,
-                minWidth: 220
-              }}>
-                <div style={{ 
-                  fontSize: 11, 
-                  fontWeight: 600, 
-                  color: isDark ? '#94a3b8' : '#64748b', 
-                  textAlign: 'center' 
-                }}>
-                  {startYear} — {endYear}
-                </div>
-                
-                {/* Начальный год */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <label style={{ 
-                    fontSize: 9, 
-                    color: isDark ? '#64748b' : '#94a3b8', 
-                    textAlign: 'left' 
-                  }}>
-                    Начало: {startYear}
-                  </label>
-                  <input
-                    type="range"
-                    min={yearRangeLimits.min}
-                    max={yearRangeLimits.max}
-                    value={startYear}
-                    onChange={(e) => {
-                      const next = Math.min(parseInt(e.target.value, 10), endYear);
-                      setStartYear(next);
-                    }}
-                    style={{
-                      width: '100%',
-                      height: 4,
-                      borderRadius: 999,
-                      appearance: 'none',
-                      background: `linear-gradient(to right, 
-                        ${isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.3)'} 0%, 
-                        ${isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.3)'} ${((startYear - yearRangeLimits.min) / (yearRangeLimits.max - yearRangeLimits.min)) * 100}%, 
-                        ${isDark ? 'rgba(59, 130, 246, 0.8)' : 'rgba(59, 130, 246, 0.6)'} ${((startYear - yearRangeLimits.min) / (yearRangeLimits.max - yearRangeLimits.min)) * 100}%, 
-                        ${isDark ? 'rgba(59, 130, 246, 0.8)' : 'rgba(59, 130, 246, 0.6)'} 100%)`,
-                      cursor: 'pointer'
-                    }}
-                  />
-                </div>
-                
-                {/* Конечный год */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <label style={{ 
-                    fontSize: 9, 
-                    color: isDark ? '#64748b' : '#94a3b8', 
-                    textAlign: 'left' 
-                  }}>
-                    Конец: {endYear}
-                  </label>
-                  <input
-                    type="range"
-                    min={yearRangeLimits.min}
-                    max={yearRangeLimits.max}
-                    value={endYear}
-                    onChange={(e) => {
-                      const next = Math.max(parseInt(e.target.value, 10), startYear);
-                      setEndYear(next);
-                    }}
-                    style={{
-                      width: '100%',
-                      height: 4,
-                      borderRadius: 999,
-                      appearance: 'none',
-                      background: `linear-gradient(to right, 
-                        ${isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.3)'} 0%, 
-                        ${isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.3)'} ${((endYear - yearRangeLimits.min) / (yearRangeLimits.max - yearRangeLimits.min)) * 100}%, 
-                        ${isDark ? 'rgba(59, 130, 246, 0.8)' : 'rgba(59, 130, 246, 0.6)'} ${((endYear - yearRangeLimits.min) / (yearRangeLimits.max - yearRangeLimits.min)) * 100}%, 
-                        ${isDark ? 'rgba(59, 130, 246, 0.8)' : 'rgba(59, 130, 246, 0.6)'} 100%)`,
-                      cursor: 'pointer'
-                    }}
-                  />
-                </div>
-              </div>
-            )}
           </div>
 
           <button
@@ -1360,191 +1287,91 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
         flexWrap: 'wrap',
         alignItems: 'center'
       }}>
-        {/* Двойной слайдер годов */}
-        {availableYears.length > 0 && (
+
+        {/* Слайдер диапазона годов */}
+        {yearFilter === 'all' && availableYears.length > 0 && (
           <div style={{ 
             display: 'flex', 
             flexDirection: 'column',
-            gap: '8px',
-            minWidth: '280px',
-            flex: 1,
-            maxWidth: '400px'
+            gap: '6px',
+            minWidth: 220
           }}>
-            {/* Заголовок с диапазоном */}
             <div style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'space-between'
+              fontSize: 11, 
+              fontWeight: 600, 
+              color: isDark ? '#94a3b8' : '#64748b', 
+              textAlign: 'center' 
             }}>
-              <span style={{ 
-                fontSize: '13px', 
-                fontWeight: '600', 
-                color: '#1e293b'
-              }}>
-                {yearRangeStart || minYear} — {yearRangeEnd || maxYear}
-              </span>
+              {activeStartYear} — {activeEndYear}
             </div>
             
-            {/* Слайдер с кнопками */}
-            <div style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '12px'
-            }}>
-              {/* Кнопка уменьшения года */}
-              <button
-                onClick={() => {
-                  if (yearRangeStart > minYear) {
-                    setYearRangeStart(yearRangeStart - 1);
-                  }
-                }}
-                disabled={yearRangeStart <= minYear}
-                style={{
-                  padding: '6px 10px',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '6px',
-                  background: yearRangeStart <= minYear ? '#f1f5f9' : '#fff',
-                  color: yearRangeStart <= minYear ? '#94a3b8' : '#64748b',
-                  fontSize: '12px',
-                  fontWeight: '500',
-                  cursor: yearRangeStart <= minYear ? 'not-allowed' : 'pointer',
-                  whiteSpace: 'nowrap',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                − год
-              </button>
-              
-              {/* Контейнер слайдера */}
-              <div style={{ 
-                flex: 1, 
-                position: 'relative',
-                height: '40px',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center'
+            {/* Начальный год */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <label style={{ 
+                fontSize: 9, 
+                color: isDark ? '#64748b' : '#94a3b8', 
+                textAlign: 'left' 
               }}>
-                {/* Фоновая полоса */}
-                <div style={{
-                  position: 'absolute',
-                  left: 0,
-                  right: 0,
-                  height: '6px',
-                  background: '#e2e8f0',
-                  borderRadius: '3px',
-                  top: '50%',
-                  transform: 'translateY(-50%)'
-                }} />
-                
-                {/* Активная полоса между ручками */}
-                <div style={{
-                  position: 'absolute',
-                  left: `${((yearRangeStart || minYear) - minYear) / Math.max(1, maxYear - minYear) * 100}%`,
-                  right: `${100 - ((yearRangeEnd || maxYear) - minYear) / Math.max(1, maxYear - minYear) * 100}%`,
-                  height: '6px',
-                  background: 'linear-gradient(90deg, #3b82f6, #60a5fa)',
-                  borderRadius: '3px',
-                  top: '50%',
-                  transform: 'translateY(-50%)'
-                }} />
-                
-                {/* Слайдер начала */}
-                <input
-                  type="range"
-                  min={minYear}
-                  max={maxYear}
-                  value={yearRangeStart || minYear}
-                  onChange={(e) => {
-                    const newValue = parseInt(e.target.value);
-                    if (newValue <= (yearRangeEnd || maxYear)) {
-                      setYearRangeStart(newValue);
-                    }
-                  }}
-                  style={{
-                    position: 'absolute',
-                    width: '100%',
-                    height: '40px',
-                    background: 'transparent',
-                    cursor: 'pointer',
-                    WebkitAppearance: 'none',
-                    appearance: 'none',
-                    pointerEvents: 'none',
-                    zIndex: 3
-                  }}
-                  className="year-range-slider"
-                />
-                
-                {/* Слайдер конца */}
-                <input
-                  type="range"
-                  min={minYear}
-                  max={maxYear}
-                  value={yearRangeEnd || maxYear}
-                  onChange={(e) => {
-                    const newValue = parseInt(e.target.value);
-                    if (newValue >= (yearRangeStart || minYear)) {
-                      setYearRangeEnd(newValue);
-                    }
-                  }}
-                  style={{
-                    position: 'absolute',
-                    width: '100%',
-                    height: '40px',
-                    background: 'transparent',
-                    cursor: 'pointer',
-                    WebkitAppearance: 'none',
-                    appearance: 'none',
-                    pointerEvents: 'none',
-                    zIndex: 4
-                  }}
-                  className="year-range-slider"
-                />
-                
-                {/* Метки годов под слайдером */}
-                <div style={{
-                  position: 'absolute',
-                  bottom: '-2px',
-                  left: 0,
-                  right: 0,
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  fontSize: '10px',
-                  color: '#94a3b8'
-                }}>
-                  <span>{minYear}</span>
-                  <span>{maxYear}</span>
-                </div>
-              </div>
-              
-              {/* Кнопка увеличения года */}
-              <button
-                onClick={() => {
-                  if (yearRangeEnd < maxYear) {
-                    setYearRangeEnd(yearRangeEnd + 1);
-                  }
+                Начало: {activeStartYear}
+              </label>
+              <input
+                type="range"
+                min={yearRangeLimits.min}
+                max={yearRangeLimits.max}
+                value={activeStartYear}
+                onChange={(e) => {
+                  const next = Math.min(parseInt(e.target.value, 10), activeEndYear);
+                  setStartYear(next);
                 }}
-                disabled={yearRangeEnd >= maxYear}
                 style={{
-                  padding: '6px 10px',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '6px',
-                  background: yearRangeEnd >= maxYear ? '#f1f5f9' : '#fff',
-                  color: yearRangeEnd >= maxYear ? '#94a3b8' : '#64748b',
-                  fontSize: '12px',
-                  fontWeight: '500',
-                  cursor: yearRangeEnd >= maxYear ? 'not-allowed' : 'pointer',
-                  whiteSpace: 'nowrap',
-                  transition: 'all 0.15s ease'
+                  width: '100%',
+                  height: 4,
+                  borderRadius: 999,
+                  appearance: 'none',
+                  background: `linear-gradient(to right, 
+                    ${isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.3)'} 0%, 
+                    ${isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.3)'} ${((activeStartYear - yearRangeLimits.min) / (yearRangeLimits.max - yearRangeLimits.min)) * 100}%, 
+                    ${isDark ? 'rgba(59, 130, 246, 0.8)' : 'rgba(59, 130, 246, 0.6)'} ${((activeStartYear - yearRangeLimits.min) / (yearRangeLimits.max - yearRangeLimits.min)) * 100}%, 
+                    ${isDark ? 'rgba(59, 130, 246, 0.8)' : 'rgba(59, 130, 246, 0.6)'} 100%)`,
+                  cursor: 'pointer'
                 }}
-              >
-                + год
-              </button>
+              />
+            </div>
+            
+            {/* Конечный год */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <label style={{ 
+                fontSize: 9, 
+                color: isDark ? '#64748b' : '#94a3b8', 
+                textAlign: 'left' 
+              }}>
+                Конец: {activeEndYear}
+              </label>
+              <input
+                type="range"
+                min={yearRangeLimits.min}
+                max={yearRangeLimits.max}
+                value={activeEndYear}
+                onChange={(e) => {
+                  const next = Math.max(parseInt(e.target.value, 10), activeStartYear);
+                  setEndYear(next);
+                }}
+                style={{
+                  width: '100%',
+                  height: 4,
+                  borderRadius: 999,
+                  appearance: 'none',
+                  background: `linear-gradient(to right, 
+                    ${isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.3)'} 0%, 
+                    ${isDark ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.3)'} ${((activeEndYear - yearRangeLimits.min) / (yearRangeLimits.max - yearRangeLimits.min)) * 100}%, 
+                    ${isDark ? 'rgba(59, 130, 246, 0.8)' : 'rgba(59, 130, 246, 0.6)'} ${((activeEndYear - yearRangeLimits.min) / (yearRangeLimits.max - yearRangeLimits.min)) * 100}%, 
+                    ${isDark ? 'rgba(59, 130, 246, 0.8)' : 'rgba(59, 130, 246, 0.6)'} 100%)`,
+                  cursor: 'pointer'
+                }}
+              />
             </div>
           </div>
         )}
-
-        {/* Разделитель */}
-        <div style={{ width: '1px', height: '50px', background: '#e2e8f0' }} />
 
         {/* Фильтр по этапу строительства */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '250px' }}>
@@ -1596,12 +1423,14 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
             Показано: <strong style={{ color: '#1e293b' }}>{filteredTasks.length}</strong> / {tasks.length}
           </span>
           
-          {((yearRangeStart !== minYear || yearRangeEnd !== maxYear) || stageFilter) && (
+          {(stageFilter || (startYear !== null && endYear !== null && availableYears.length > 0 && (activeStartYear !== availableYears[0] || activeEndYear !== availableYears[availableYears.length - 1]))) && (
             <button
               onClick={() => {
-                setYearRangeStart(minYear);
-                setYearRangeEnd(maxYear);
                 setStageFilter('');
+                if (availableYears.length > 0) {
+                  setStartYear(availableYears[0]);
+                  setEndYear(availableYears[availableYears.length - 1]);
+                }
               }}
               style={{
                 padding: '6px 12px',
