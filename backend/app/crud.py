@@ -153,7 +153,7 @@ def get_schedules(
     city_id: Optional[int] = None,
     user_id: Optional[int] = None,
     skip: int = 0, 
-    limit: int = 100
+    limit: int = 10000
 ):
     query = db.query(models.Schedule)
     
@@ -170,7 +170,8 @@ def create_schedule(db: Session, schedule: schemas.ScheduleCreate, user_id: int)
     schedule_data = schedule.dict()
     
     # Если передан construction_stage (текст), пытаемся найти или создать этап
-    if schedule_data.get('construction_stage') and not schedule_data.get('construction_stage_id'):
+    # Для preconstruction типа construction_stage хранит номер пункта, а не этап строительства
+    if schedule_data.get('construction_stage') and not schedule_data.get('construction_stage_id') and schedule_data.get('schedule_type') != 'preconstruction':
         stage = get_construction_stage_by_name(db, schedule_data['construction_stage'])
         if stage:
             schedule_data['construction_stage_id'] = stage.id
@@ -193,8 +194,8 @@ def update_schedule(db: Session, schedule_id: int, schedule_update: schemas.Sche
     if db_schedule:
         update_data = schedule_update.dict(exclude_unset=True)
         
-        # Обработка construction_stage
-        if 'construction_stage' in update_data and update_data['construction_stage']:
+        # Обработка construction_stage (не для preconstruction — там это номер пункта)
+        if 'construction_stage' in update_data and update_data['construction_stage'] and db_schedule.schedule_type != 'preconstruction':
             stage = get_construction_stage_by_name(db, update_data['construction_stage'])
             if stage:
                 update_data['construction_stage_id'] = stage.id

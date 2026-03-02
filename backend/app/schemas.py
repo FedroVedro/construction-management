@@ -89,8 +89,8 @@ class ScheduleBase(BaseModel):
     city_id: int
     construction_stage_id: Optional[int] = None
     construction_stage: Optional[str] = None  # Для обратной совместимости
-    planned_start_date: Union[datetime, str]
-    planned_end_date: Union[datetime, str]
+    planned_start_date: Optional[Union[datetime, str]] = None
+    planned_end_date: Optional[Union[datetime, str]] = None
     actual_start_date: Optional[Union[datetime, str]] = None
     actual_end_date: Optional[Union[datetime, str]] = None
     cost_plan: Optional[float] = None
@@ -135,7 +135,7 @@ class ScheduleBase(BaseModel):
     
     @validator('schedule_type')
     def validate_schedule_type(cls, v):
-        allowed_types = ['document', 'hr', 'procurement', 'construction', 'marketing']
+        allowed_types = ['document', 'hr', 'procurement', 'construction', 'marketing', 'preconstruction']
         if v not in allowed_types:
             raise ValueError(f'Недопустимый тип графика: {v}. Разрешены: {allowed_types}')
         return v
@@ -539,7 +539,7 @@ class WorkTemplateBase(BaseModel):
 
     @validator('schedule_type')
     def validate_schedule_type(cls, v):
-        allowed = ['document', 'hr', 'procurement', 'construction', 'marketing']
+        allowed = ['document', 'hr', 'procurement', 'construction', 'marketing', 'preconstruction']
         if v not in allowed:
             raise ValueError(f"Недопустимый тип графика: {v}. Разрешены: {allowed}")
         return v

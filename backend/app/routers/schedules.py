@@ -38,7 +38,7 @@ def read_schedules(
     schedule_type: Optional[str] = Query(None),
     city_id: Optional[int] = Query(None),
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 10000,
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.get_current_user)
 ):

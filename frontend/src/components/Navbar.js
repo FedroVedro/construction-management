@@ -68,6 +68,7 @@ const Navbar = () => {
             <Link to="/construction-schedule" style={linkStyle}>График строительства</Link>
             <Link to="/directive-schedule" style={linkStyle}>Директивный график</Link>
             <Link to="/marketing-schedule" style={linkStyle}>График маркетинга</Link>
+            <Link to="/preconstruction-schedule" style={linkStyle}>График ТЗ</Link>
             <Link to="/project-office" style={linkStyle}>Проектный офис</Link>
             <Link to="/strategic-map" style={{...linkStyle, color: '#a78bfa', fontWeight: 500}}>📊 Мастер-карта</Link>
             <Link to="/process-management" style={{...linkStyle, color: '#fbbf24', fontWeight: 500}}>📋 Процесс управления</Link>

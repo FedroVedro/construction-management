@@ -8,6 +8,8 @@ const RowActions = ({
   onDelete,
   onMoveUp,
   onMoveDown,
+  onInsertAbove,
+  onInsertBelow,
   canMoveUp = true,
   canMoveDown = true,
   isNew = false
@@ -116,6 +118,28 @@ const RowActions = ({
               overflow: 'hidden'
             }}
           >
+            {onInsertAbove && (
+              <ActionMenuItem
+                icon="⬆️"
+                label="Вставить выше"
+                onClick={() => {
+                  onInsertAbove();
+                  setShowMenu(false);
+                }}
+              />
+            )}
+
+            {onInsertBelow && (
+              <ActionMenuItem
+                icon="⬇️"
+                label="Вставить ниже"
+                onClick={() => {
+                  onInsertBelow();
+                  setShowMenu(false);
+                }}
+              />
+            )}
+
             {onCopy && (
               <ActionMenuItem
                 icon="📋"
