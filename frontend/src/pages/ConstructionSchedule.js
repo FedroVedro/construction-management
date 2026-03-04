@@ -13,6 +13,7 @@ import { AddRowButtonCompact } from '../components/AddRowButton';
 import { saveScheduleOrder, applyScheduleOrder } from '../utils/scheduleOrderStorage';
 import { saveSelectedCity, getSelectedCity, saveViewMode, getViewMode } from '../utils/userPreferences';
 import { validateDates, prepareRowForCopy } from '../utils/scheduleHelpers';
+import { createScheduleUpdateHandler } from '../utils/scheduleUpdateWithCascade';
 
 // Колонки для экспорта
 const EXPORT_COLUMNS = [
@@ -42,7 +43,7 @@ const ConstructionSchedule = () => {
   const { showSuccess, showError, showInfo, showWarning } = useToast();
 
   const canEdit = user?.role !== 'director' && 
-    (user?.role === 'admin' || user?.department === 'Строительный отдел');
+    (user?.role === 'admin' || user?.department === 'construction');
 
   useEffect(() => {
     fetchCities();
@@ -132,38 +133,10 @@ const ConstructionSchedule = () => {
     }
   };
 
-  // Обработчик обновления дат из диаграммы Ганта
-  // Важно: НЕ обновляем schedules здесь - ModernGanttChart сам управляет UI
-  const handleScheduleUpdate = async (scheduleId, updates) => {
-    try {
-      // БАГ-ФИХ: Добавлен таймаут 8 секунд для предотвращения зависания
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-      
-      await client.put(`/schedules/${scheduleId}`, updates, {
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      // БАГ-ФИХ: Обновляем локальный state после успешного сохранения
-      // Это предотвращает визуальный возврат блока на старое место
-      setSchedules(prev => prev.map(schedule => 
-        schedule.id === scheduleId 
-          ? { ...schedule, ...updates }
-          : schedule
-      ));
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        console.error('Таймаут запроса сохранения');
-        showError('Превышено время ожидания сохранения');
-      } else {
-        console.error('Error updating schedule:', error);
-        showError('Ошибка при обновлении дат');
-      }
-      throw error;
-    }
-  };
+  // Обработчик обновления дат (с каскадом для связанных задач)
+  const handleScheduleUpdate = createScheduleUpdateHandler({
+    fetchSchedules, showError, cityId: selectedCity
+  });
 
   const handleCityChange = (cityId) => {
     setSelectedCity(cityId);

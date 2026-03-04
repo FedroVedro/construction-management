@@ -1,5 +1,6 @@
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from .. import schemas, models, database, auth, crud
@@ -9,13 +10,33 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+
+def _make_login_response(access_token: str, user: models.User):
+    """Формирует ответ с httpOnly cookie — сессия сохраняется (по сути без разлогина)."""
+    content = {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": user
+    }
+    response = JSONResponse(content=content)
+    response.set_cookie(
+        key=settings.SESSION_COOKIE_NAME,
+        value=access_token,
+        max_age=settings.SESSION_COOKIE_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        secure=settings.SESSION_COOKIE_SECURE,
+        path="/",
+    )
+    return response
+
+
 @router.post("/login-json", response_model=schemas.Token)
 def login_json(credentials: dict, db: Session = Depends(database.get_db)):
     """Alternative login endpoint using JSON instead of form-data"""
     username = credentials.get("username")
     password = credentials.get("password")
     
-    # Валидация входных данных
     if not username or not password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -30,17 +51,15 @@ def login_json(credentials: dict, db: Session = Depends(database.get_db)):
             detail="Incorrect username or password",
         )
     
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    # Токен живёт столько же, сколько cookie — сессия без разлогина
+    access_token_expires = timedelta(seconds=settings.SESSION_COOKIE_MAX_AGE)
     access_token = auth.create_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
     
     logger.info(f"Successful JSON login for user: {username}")
-    return {
-        "access_token": access_token, 
-        "token_type": "bearer",
-        "user": user
-    }
+    return _make_login_response(access_token, user)
+
 
 @router.post("/register", response_model=schemas.User)
 def register(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
@@ -48,6 +67,7 @@ def register(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
     if db_user:
         raise HTTPException(status_code=400, detail="Username already registered")
     return crud.create_user(db=db, user=user)
+
 
 @router.post("/login", response_model=schemas.Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(database.get_db)):
@@ -60,7 +80,6 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # Безопасная проверка пароля через хеш (hardcoded credentials УДАЛЕНЫ!)
     if not auth.verify_password(form_data.password, user.hashed_password):
         logger.warning(f"Failed login attempt for user: {form_data.username}")
         raise HTTPException(
@@ -69,17 +88,23 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    # Токен живёт столько же, сколько cookie — сессия без разлогина
+    access_token_expires = timedelta(seconds=settings.SESSION_COOKIE_MAX_AGE)
     access_token = auth.create_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
     
     logger.info(f"Successful login for user: {form_data.username}")
-    return {
-        "access_token": access_token, 
-        "token_type": "bearer",
-        "user": user
-    }
+    return _make_login_response(access_token, user)
+
+
+@router.post("/logout")
+def logout():
+    """Сбрасывает cookie сессии — выход из системы."""
+    response = JSONResponse(content={"message": "Logged out"})
+    response.delete_cookie(key=settings.SESSION_COOKIE_NAME, path="/")
+    return response
+
 
 @router.get("/me", response_model=schemas.User)
 def read_users_me(current_user: models.User = Depends(auth.get_current_user)):

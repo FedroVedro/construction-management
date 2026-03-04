@@ -2,13 +2,22 @@ from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 import bcrypt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from . import models, schemas, database
 from .config import settings
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login", auto_error=False)
+
+
+async def get_token_from_cookie_or_header(request: Request, token_from_header: Optional[str] = Depends(oauth2_scheme)) -> Optional[str]:
+    """Токен из httpOnly cookie или заголовка Authorization (для совместимости)."""
+    # Сначала проверяем cookie (основной способ для постоянной сессии)
+    token = request.cookies.get(settings.SESSION_COOKIE_NAME)
+    if token:
+        return token
+    return token_from_header
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Проверяет пароль с использованием bcrypt"""
@@ -37,17 +46,19 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
-async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(database.get_db)):
+async def get_current_user(token: Optional[str] = Depends(get_token_from_cookie_or_header), db: Session = Depends(database.get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    if not token:
+        raise credentials_exception
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         username: str = payload.get("sub")
@@ -55,9 +66,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
             raise credentials_exception
     except JWTError:
         raise credentials_exception
-    
+
     user = db.query(models.User).filter(models.User.username == username).first()
     if user is None:
+        raise credentials_exception
+    if getattr(user, "is_active", True) is False:
         raise credentials_exception
     return user
 

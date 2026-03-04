@@ -43,7 +43,8 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     hr: { bg: '#a99bc4', border: '#8677a3' },
     procurement: { bg: '#d4b896', border: '#b89b73' },
     construction: { bg: '#8bc49a', border: '#69a378' },
-    marketing: { bg: '#d4a0b8', border: '#b87d9a' }
+    marketing: { bg: '#d4a0b8', border: '#b87d9a' },
+    preconstruction: { bg: '#7baeb8', border: '#5a8d96' }
   };
 
   const typeNames = {
@@ -51,7 +52,8 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
     hr: 'HR',
     procurement: 'Закупки',
     construction: 'Строительство',
-    marketing: 'Маркетинг'
+    marketing: 'Маркетинг',
+    preconstruction: 'График ТЗ'
   };
 
   // Форматирование даты
@@ -128,9 +130,6 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
       max: Math.min(2035, maxYear + 2)  // С запасом +2 года
     };
   }, [tasks]);
-
-  const minYear = yearRangeLimits.min;
-  const maxYear = yearRangeLimits.max;
 
   // Доступные годы из задач (для выпадающего списка)
   const availableYears = useMemo(() => {
@@ -409,21 +408,25 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
 
     const processed = schedules
       .filter(s => viewMode === 'all' || s.schedule_type === viewMode)
+      .filter(s => s.planned_start_date && s.planned_end_date)
       .map(schedule => {
         const city = cities.find(c => c.id === schedule.city_id);
+        const plannedStart = new Date(schedule.planned_start_date);
+        const plannedEnd = new Date(schedule.planned_end_date);
+        if (isNaN(plannedStart.getTime()) || isNaN(plannedEnd.getTime())) return null;
         return {
           id: schedule.id,
           cityName: city?.name || 'Неизвестный объект',
           constructionStage: schedule.construction_stage || 'Без этапа',
           workName: schedule.work_name || schedule.vacancy || schedule.sections || '',
           type: schedule.schedule_type,
-          plannedStart: new Date(schedule.planned_start_date),
-          plannedEnd: new Date(schedule.planned_end_date),
+          plannedStart,
+          plannedEnd,
           actualStart: schedule.actual_start_date ? new Date(schedule.actual_start_date) : null,
           actualEnd: schedule.actual_end_date ? new Date(schedule.actual_end_date) : null,
           color: typeColors[schedule.schedule_type] || typeColors.construction
         };
-      });
+      }).filter(Boolean);
 
     setTasks(sortTasks(processed, sortBy, stages));
   }, [schedules, cities, viewMode, sortBy, sortTasks, dragging, resizing, isSyncing, stages]);
@@ -476,6 +479,7 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
   }, [tasks]);
   
   const handleMouseDown = (e, task, action) => {
+    if (!onScheduleUpdate) return; // Read-only для директора
     e.preventDefault();
     e.stopPropagation();
     const startX = e.clientX;
@@ -818,7 +822,7 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
             borderRadius: '4px',
             border: critical ? '2px solid #fff' : `1px solid ${borderColor}`,
             boxShadow: isHovered ? '0 4px 12px rgba(0,0,0,0.3)' : '0 1px 3px rgba(0,0,0,0.2)',
-            cursor: dragging || resizing ? 'grabbing' : 'grab',
+            cursor: onScheduleUpdate ? (dragging || resizing ? 'grabbing' : 'grab') : 'default',
             transition: dragging || resizing ? 'none' : 'box-shadow 0.2s ease, opacity 0.2s ease',
             willChange: dragging || resizing ? 'transform' : 'auto'
           }}
@@ -1022,33 +1026,37 @@ const ModernGanttChart = ({ schedules, cities, selectedView = null, onScheduleUp
             </div>
           )}
 
-          {/* Ручки resize - теперь внутри фактического блока */}
-          <div
-            style={{
-              position: 'absolute', 
-              left: 0, 
-              top: 0, 
-              width: '8px', 
-              height: '100%',
-              cursor: 'ew-resize', 
-              borderRadius: '4px 0 0 4px',
-              zIndex: 10
-            }}
-            onMouseDown={(e) => handleMouseDown(e, task, 'resize-start')}
-          />
-          <div
-            style={{
-              position: 'absolute', 
-              right: 0, 
-              top: 0, 
-              width: '8px', 
-              height: '100%',
-              cursor: 'ew-resize', 
-              borderRadius: '0 4px 4px 0',
-              zIndex: 10
-            }}
-            onMouseDown={(e) => handleMouseDown(e, task, 'resize-end')}
-          />
+          {/* Ручки resize - только при редактировании */}
+          {onScheduleUpdate && (
+            <>
+              <div
+                style={{
+                  position: 'absolute', 
+                  left: 0, 
+                  top: 0, 
+                  width: '8px', 
+                  height: '100%',
+                  cursor: 'ew-resize', 
+                  borderRadius: '4px 0 0 4px',
+                  zIndex: 10
+                }}
+                onMouseDown={(e) => handleMouseDown(e, task, 'resize-start')}
+              />
+              <div
+                style={{
+                  position: 'absolute', 
+                  right: 0, 
+                  top: 0, 
+                  width: '8px', 
+                  height: '100%',
+                  cursor: 'ew-resize', 
+                  borderRadius: '0 4px 4px 0',
+                  zIndex: 10
+                }}
+                onMouseDown={(e) => handleMouseDown(e, task, 'resize-end')}
+              />
+            </>
+          )}
         </div>
 
         {/* Фактическое выполнение */}

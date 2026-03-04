@@ -9,8 +9,10 @@ import RowActions from '../components/RowActions';
 import StatusBadge from '../components/StatusBadge';
 import { AddRowButtonCompact } from '../components/AddRowButton';
 import { saveScheduleOrder, applyScheduleOrder } from '../utils/scheduleOrderStorage';
+import { getCollapsedGroups, saveCollapsedGroups } from '../utils/hiddenRowsStorage';
 import { saveSelectedCity, getSelectedCity, saveViewMode, getViewMode } from '../utils/userPreferences';
 import { validateDates, prepareRowForCopy } from '../utils/scheduleHelpers';
+import { createScheduleUpdateHandler } from '../utils/scheduleUpdateWithCascade';
 import PRE_CONSTRUCTION_TEMPLATE from '../utils/preConstructionTemplate';
 
 const SCHEDULE_TYPE = 'preconstruction';
@@ -27,16 +29,20 @@ const EXPORT_COLUMNS = [
   { field: 'vacancy', label: 'Документы', type: 'text' },
 ];
 
+// Логика как в Excel: =ЕСЛИ((REF-start)/(end-start)<0;0;ЕСЛИ((REF-start)/(end-start)>100%;100%;...))
+// REF = текущая дата, start = начало периода, end = конец периода
 const calcReadiness = (startDate, endDate) => {
   if (!startDate || !endDate) return null;
   const start = new Date(startDate);
   const end = new Date(endDate);
-  const now = new Date();
-  if (isNaN(start) || isNaN(end) || end <= start) return null;
-  const total = end - start;
-  const elapsed = now - start;
-  const pct = Math.round((elapsed / total) * 100);
-  return Math.max(0, Math.min(100, pct));
+  const ref = new Date(); // REF = сегодня
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) return null;
+  const numerator = ref - start;
+  const denominator = end - start;
+  let pct = (numerator / denominator) * 100;
+  if (pct < 0) pct = 0;
+  if (pct > 100) pct = 100;
+  return Math.round(pct);
 };
 
 const calcDelay = (plannedEnd, actualEnd) => {
@@ -56,6 +62,39 @@ const isSectionRow = (schedule) => {
   return false;
 };
 
+// Уровень вложенности по номеру: "2"=0, "2.1"=1, "2.1.1"=2
+const getOutlineLevel = (num) => {
+  if (num == null) return -1;
+  const cleaned = String(num).replace(/\.+$/, '').trim();
+  if (!cleaned || !/^\d/.test(cleaned)) return -1;
+  const parts = cleaned.split('.').filter(Boolean);
+  return Math.max(0, parts.length - 1);
+};
+
+// Строим группы для outline: parentIndex -> { childStart, childEnd }
+const buildOutlineGroups = (rows) => {
+  const levels = rows.map((r, i) => getOutlineLevel(r.construction_stage));
+  const groups = new Map();
+  for (let i = 0; i < rows.length; i++) {
+    const L = levels[i];
+    if (L < 0) continue;
+    let j = i + 1;
+    while (j < rows.length && levels[j] > L) j++;
+    if (j > i + 1) groups.set(i, { start: i + 1, end: j - 1 });
+  }
+  return { groups, levels };
+};
+
+// Проверка: скрыта ли строка как потомок свёрнутой группы
+const isRowHiddenByOutline = (rowIndex, groups, collapsedParentIds, rows) => {
+  for (const [parentIdx, { start, end }] of groups) {
+    const parentId = rows[parentIdx]?.id;
+    if (!parentId || !collapsedParentIds.has(String(parentId))) continue;
+    if (rowIndex >= start && rowIndex <= end) return true;
+  }
+  return false;
+};
+
 const PreConstructionSchedule = () => {
   const [schedules, setSchedules] = useState([]);
   const [cities, setCities] = useState([]);
@@ -65,17 +104,30 @@ const PreConstructionSchedule = () => {
   const [searchText, setSearchText] = useState('');
   const [dateErrors, setDateErrors] = useState({});
   const [templateLoading, setTemplateLoading] = useState(false);
+  const [collapsedGroupParentIds, setCollapsedGroupParentIds] = useState(() => new Set());
   const { user } = useAuth();
   const { showSuccess, showError, showInfo, showWarning } = useToast();
 
   const canEdit = user?.role !== 'director' && 
-    (user?.role === 'admin' || user?.department === 'ТЗ отдел');
+    (user?.role === 'admin' || user?.department === 'preconstruction');
 
   useEffect(() => { fetchCities(); }, []);
 
   useEffect(() => {
     if (selectedCity) fetchSchedules();
   }, [selectedCity]);
+
+  useEffect(() => {
+    if (selectedCity) {
+      setCollapsedGroupParentIds(getCollapsedGroups(selectedCity, SCHEDULE_TYPE));
+    }
+  }, [selectedCity]);
+
+  useEffect(() => {
+    if (selectedCity) {
+      saveCollapsedGroups(selectedCity, SCHEDULE_TYPE, collapsedGroupParentIds);
+    }
+  }, [selectedCity, collapsedGroupParentIds]);
 
   useEffect(() => {
     const adjustTextareaHeights = () => {
@@ -130,22 +182,9 @@ const PreConstructionSchedule = () => {
     }
   };
 
-  const handleScheduleUpdate = async (scheduleId, updates) => {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-      await client.put(`/schedules/${scheduleId}`, updates, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      setSchedules(prev => prev.map(s => s.id === scheduleId ? { ...s, ...updates } : s));
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        showError('Превышено время ожидания сохранения');
-      } else {
-        showError('Ошибка при обновлении дат');
-      }
-      throw error;
-    }
-  };
+  const handleScheduleUpdate = createScheduleUpdateHandler({
+    fetchSchedules, showError, cityId: selectedCity
+  });
 
   const handleCityChange = (cityId) => {
     setSelectedCity(cityId);
@@ -166,6 +205,30 @@ const PreConstructionSchedule = () => {
     }
     return filtered;
   }, [schedules, searchText]);
+
+  const toggleGroupCollapse = (parentId) => {
+    setCollapsedGroupParentIds(prev => {
+      const next = new Set(prev);
+      const sid = String(parentId);
+      if (next.has(sid)) next.delete(sid);
+      else next.add(sid);
+      return next;
+    });
+  };
+
+  const expandAllGroups = () => {
+    setCollapsedGroupParentIds(new Set());
+    if (selectedCity) saveCollapsedGroups(selectedCity, SCHEDULE_TYPE, new Set());
+    showInfo('Все группы развёрнуты');
+  };
+
+  const collapseAllGroups = () => {
+    const base = getFilteredSchedules();
+    const { groups } = buildOutlineGroups(base);
+    const parentIds = new Set([...groups.keys()].map(i => String(base[i].id)));
+    setCollapsedGroupParentIds(parentIds);
+    showInfo('Все группы свёрнуты');
+  };
 
   const saveCell = async (scheduleId, field, value) => {
     try {
@@ -253,8 +316,10 @@ const PreConstructionSchedule = () => {
 
   const insertRowAt = (index, position) => {
     if (!selectedCity) { showInfo('Пожалуйста, выберите город'); return; }
-    const filteredSchedules = getFilteredSchedules();
-    const targetSchedule = filteredSchedules[index];
+    const base = getFilteredSchedules();
+    const { groups } = buildOutlineGroups(base);
+    const list = base.filter((_, idx) => !isRowHiddenByOutline(idx, groups, collapsedGroupParentIds, base));
+    const targetSchedule = list[index];
     const realIndex = schedules.findIndex(s => s.id === targetSchedule.id);
     const insertIndex = position === 'above' ? realIndex : realIndex + 1;
     const newSchedules = [...schedules];
@@ -351,10 +416,12 @@ const PreConstructionSchedule = () => {
   };
 
   const moveRow = (fromIndex, toIndex) => {
-    const filteredSchedules = getFilteredSchedules();
-    if (toIndex < 0 || toIndex >= filteredSchedules.length) return;
-    const fromSchedule = filteredSchedules[fromIndex];
-    const toSchedule = filteredSchedules[toIndex];
+    const base = getFilteredSchedules();
+    const { groups } = buildOutlineGroups(base);
+    const list = base.filter((_, idx) => !isRowHiddenByOutline(idx, groups, collapsedGroupParentIds, base));
+    if (toIndex < 0 || toIndex >= list.length) return;
+    const fromSchedule = list[fromIndex];
+    const toSchedule = list[toIndex];
     const realFromIndex = schedules.findIndex(s => s.id === fromSchedule.id);
     const realToIndex = schedules.findIndex(s => s.id === toSchedule.id);
     const newSchedules = [...schedules];
@@ -467,10 +534,14 @@ const PreConstructionSchedule = () => {
     );
   };
 
-  const filteredSchedules = getFilteredSchedules();
+  const baseFiltered = getFilteredSchedules();
+  const { groups: outlineGroups, levels: outlineLevels } = buildOutlineGroups(baseFiltered);
+  const visibleSchedules = baseFiltered.filter((_, idx) => !isRowHiddenByOutline(idx, outlineGroups, collapsedGroupParentIds, baseFiltered));
+  const hiddenByOutlineCount = baseFiltered.length - visibleSchedules.length;
   const cellBorder = '1px solid var(--border-color)';
   const cellPad = '6px 8px';
-  const totalCols = canEdit ? 13 : 12;
+  const hasOutline = outlineGroups.size > 0;
+  const totalCols = (canEdit ? 13 : 12) + (hasOutline ? 1 : 0);
 
   return (
     <div className="container-fluid">
@@ -501,7 +572,7 @@ const PreConstructionSchedule = () => {
 
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
         <ScheduleToolbar
-          schedules={filteredSchedules}
+          schedules={visibleSchedules}
           columns={EXPORT_COLUMNS}
           filename="preconstruction_schedule"
           onAddRow={canEdit ? addNewRow : null}
@@ -513,6 +584,35 @@ const PreConstructionSchedule = () => {
           onToggleCalendar={handleViewModeChange}
         />
         
+        {canEdit && !showCalendar && schedules.length > 0 && outlineGroups.size > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', background: 'var(--table-stripe)', borderRadius: '6px', flexWrap: 'wrap' }}>
+            <button
+              onClick={expandAllGroups}
+              style={{
+                padding: '6px 12px', border: 'none', borderRadius: '6px',
+                background: '#17a2b8', color: '#fff', fontSize: '12px', fontWeight: 600,
+                cursor: 'pointer', whiteSpace: 'nowrap'
+              }}
+            >
+              Развернуть все
+            </button>
+            <button
+              onClick={collapseAllGroups}
+              style={{
+                padding: '6px 12px', border: 'none', borderRadius: '6px',
+                background: '#6c757d', color: '#fff', fontSize: '12px', fontWeight: 600,
+                cursor: 'pointer', whiteSpace: 'nowrap'
+              }}
+            >
+              Свернуть все
+            </button>
+            {hiddenByOutlineCount > 0 && (
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                Скрыто строк: {hiddenByOutlineCount}
+              </span>
+            )}
+          </div>
+        )}
         {canEdit && !showCalendar && (
           <>
             <button
@@ -577,9 +677,10 @@ const PreConstructionSchedule = () => {
               <table className="table po-table" style={{ marginBottom: 0, borderCollapse: 'collapse', border: cellBorder }}>
                 <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--table-stripe)', zIndex: 10 }}>
                   <tr>
+                    {hasOutline && <th style={{ width: '28px', border: cellBorder, padding: '4px', minWidth: '28px' }} />}
                     <th style={{ width: '45px', border: cellBorder, padding: cellPad, textAlign: 'center' }}>№</th>
                     {canEdit && <th style={{ width: '80px', border: cellBorder, padding: cellPad }}>Действия</th>}
-                    <th style={{ width: '240px', border: cellBorder, padding: cellPad, textAlign: 'center' }}>№ п/п</th>
+                    <th style={{ minWidth: '120px', width: '120px', border: cellBorder, padding: cellPad, textAlign: 'center' }}>№ п/п</th>
                     <th style={{ minWidth: '350px', border: cellBorder, padding: cellPad }}>Наименование работ</th>
                     <th style={{ minWidth: '120px', border: cellBorder, padding: cellPad }}>План начало</th>
                     <th style={{ minWidth: '120px', border: cellBorder, padding: cellPad }}>План конец</th>
@@ -594,7 +695,11 @@ const PreConstructionSchedule = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredSchedules.map((schedule, index) => {
+                  {visibleSchedules.map((schedule, index) => {
+                    const baseIdx = baseFiltered.findIndex(s => s.id === schedule.id);
+                    const isGroupParent = hasOutline && outlineGroups.has(baseIdx);
+                    const isCollapsed = isGroupParent && collapsedGroupParentIds.has(String(schedule.id));
+                    const level = hasOutline ? outlineLevels[baseIdx] : 0;
                     const isSection = isSectionRow(schedule);
                     const planReadiness = calcReadiness(schedule.planned_start_date, schedule.planned_end_date);
                     const factReadiness = calcReadiness(schedule.actual_start_date, schedule.actual_end_date);
@@ -608,6 +713,33 @@ const PreConstructionSchedule = () => {
                     
                     return (
                       <tr key={schedule.id} style={rowStyle}>
+                        {hasOutline && (
+                          <td style={{
+                            width: '28px', minWidth: '28px', border: cellBorder, padding: '2px 4px',
+                            verticalAlign: 'middle', background: 'var(--table-stripe)'
+                          }}>
+                            {isGroupParent ? (
+                              <button
+                                type="button"
+                                onClick={() => toggleGroupCollapse(schedule.id)}
+                                style={{
+                                  width: '20px', height: '20px', padding: 0, border: '1px solid #94a3b8',
+                                  borderRadius: '3px', background: '#fff', cursor: 'pointer',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  fontSize: '14px', lineHeight: 1, color: '#64748b'
+                                }}
+                                title={isCollapsed ? 'Развернуть' : 'Свернуть'}
+                              >
+                                {isCollapsed ? '+' : '−'}
+                              </button>
+                            ) : level >= 0 ? (
+                              <div style={{
+                                width: '100%', minHeight: '20px',
+                                borderLeft: '2px solid #cbd5e1', marginLeft: '10px'
+                              }} />
+                            ) : null}
+                          </td>
+                        )}
                         <td style={{ textAlign: 'center', border: cellBorder, padding: cellPad, fontSize: '12px', color: 'var(--text-muted)' }}>
                           {schedule.isNew ? '★' : index + 1}
                         </td>
@@ -621,14 +753,17 @@ const PreConstructionSchedule = () => {
                               onInsertAbove={() => insertRowAt(index, 'above')}
                               onInsertBelow={() => insertRowAt(index, 'below')}
                               canMoveUp={index > 0}
-                              canMoveDown={index < filteredSchedules.length - 1}
+                              canMoveDown={index < visibleSchedules.length - 1}
                             />
                           </td>
                         )}
-                        <td style={{ border: cellBorder, padding: cellPad, textAlign: 'center', fontWeight: isSection ? 700 : 400, whiteSpace: 'nowrap' }}>
+                        <td style={{ border: cellBorder, padding: cellPad, textAlign: 'center', fontWeight: isSection ? 700 : 400, whiteSpace: 'nowrap', minWidth: '120px', width: '120px' }}>
                           {renderCell(schedule, 'construction_stage', schedule.construction_stage)}
                         </td>
-                        <td style={{ border: cellBorder, padding: cellPad, fontWeight: isSection ? 700 : 400 }}>
+                        <td style={{
+                          border: cellBorder, padding: cellPad, fontWeight: isSection ? 700 : 400,
+                          paddingLeft: hasOutline && level > 0 ? 8 + level * 16 : undefined
+                        }}>
                           {renderCell(schedule, 'work_name', schedule.work_name)}
                         </td>
                         <td style={{ border: cellBorder, padding: cellPad }}>{renderCell(schedule, 'planned_start_date', schedule.planned_start_date)}</td>
@@ -644,25 +779,37 @@ const PreConstructionSchedule = () => {
                       </tr>
                     );
                   })}
-                  {filteredSchedules.length === 0 && (
+                  {visibleSchedules.length === 0 && (
                     <tr>
                       <td colSpan={totalCols} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-                        <div style={{ fontSize: '48px', marginBottom: '16px' }}>📋</div>
-                        <div>Нет данных для отображения</div>
-                        {canEdit && (
-                          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '16px' }}>
-                            <button onClick={fillFromTemplate} className="btn btn-primary" disabled={templateLoading}>
-                              {templateLoading ? 'Загрузка...' : 'Заполнить по шаблону'}
+                        {hiddenByOutlineCount > 0 ? (
+                          <>
+                            <div style={{ fontSize: '36px', marginBottom: '12px' }}>👁‍🗨</div>
+                            <div>Скрыто строк: {hiddenByOutlineCount}</div>
+                            <button onClick={expandAllGroups} className="btn btn-primary" style={{ marginTop: '16px' }}>
+                              Развернуть все
                             </button>
-                            <button onClick={addNewRow} className="btn btn-secondary">
-                              + Добавить строку
-                            </button>
-                          </div>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ fontSize: '48px', marginBottom: '16px' }}>📋</div>
+                            <div>Нет данных для отображения</div>
+                            {canEdit && (
+                              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '16px' }}>
+                                <button onClick={fillFromTemplate} className="btn btn-primary" disabled={templateLoading}>
+                                  {templateLoading ? 'Загрузка...' : 'Заполнить по шаблону'}
+                                </button>
+                                <button onClick={addNewRow} className="btn btn-secondary">
+                                  + Добавить строку
+                                </button>
+                              </div>
+                            )}
+                          </>
                         )}
                       </td>
                     </tr>
                   )}
-                  {filteredSchedules.length > 0 && canEdit && (
+                  {visibleSchedules.length > 0 && canEdit && (
                     <AddRowButtonCompact onClick={addNewRow} colSpan={totalCols} />
                   )}
                 </tbody>

@@ -7,7 +7,9 @@ const typeNamesRu = {
   document: 'Выдача документации',
   hr: 'HR',
   procurement: 'Закупки',
-  construction: 'Строительство'
+  construction: 'Строительство',
+  marketing: 'Маркетинг',
+  preconstruction: 'График ТЗ'
 };
 
 const getDetailFieldName = (type) => {
@@ -16,6 +18,8 @@ const getDetailFieldName = (type) => {
     case 'hr': return 'Вакансия';
     case 'procurement':
     case 'construction':
+    case 'marketing':
+    case 'preconstruction':
       return 'Наименование работ';
     default: return 'Информация';
   }

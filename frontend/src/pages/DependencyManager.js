@@ -402,7 +402,19 @@ const DependencyManager = () => {
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: '12px' }}>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => {
+                setIsCreatingLink(!isCreatingLink);
+                if (!isCreatingLink) setSelectedPredecessor(null);
+              }}
+              style={buttonStyle(isCreatingLink, '#7b9eb8')}
+              disabled={!selectedCity || filteredSchedules.length < 2}
+              title="Кликните на задачу-предшественника, затем на последователя"
+            >
+              <span>➕</span>
+              {isCreatingLink ? 'Отмена' : 'Создать связь'}
+            </button>
             <button
               onClick={() => setShowCriticalPath(!showCriticalPath)}
               style={buttonStyle(showCriticalPath, '#d4a0a0')}
@@ -411,7 +423,6 @@ const DependencyManager = () => {
               <span>🔥</span>
               {showCriticalPath ? 'Скрыть КП' : 'Критический путь'}
             </button>
-            
             <button
               onClick={() => setShowTemplates(!showTemplates)}
               style={buttonStyle(showTemplates, '#a99bc4')}
@@ -559,7 +570,9 @@ const DependencyManager = () => {
               <div>
                 <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600' }}>Создание связи</h3>
                 <p style={{ margin: 0, fontSize: '13px', color: isDark ? '#94a3b8' : '#64748b' }}>
-                  От: <strong>{getTaskName(selectedPredecessor)}</strong>
+                  {selectedPredecessor
+                    ? <>Предшественник: <strong>{getTaskName(selectedPredecessor)}</strong> — кликните задачу-последователя ниже</>
+                    : 'Шаг 1: кликните задачу-предшественника в списке слева'}
                 </p>
               </div>
             </div>
@@ -575,14 +588,15 @@ const DependencyManager = () => {
                 cursor: 'pointer',
                 color: isDark ? '#94a3b8' : '#64748b'
               }}
+              title="Отмена"
             >
               ✕
             </button>
           </div>
 
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <div>
-              <label style={{ fontSize: '12px', color: isDark ? '#94a3b8' : '#64748b', display: 'block', marginBottom: '4px' }}>
+              <label style={{ fontSize: '12px', color: isDark ? '#94a3b8' : '#64748b', display: 'block', marginBottom: '4px', fontWeight: '600' }}>
                 Тип связи
               </label>
               <select
@@ -591,12 +605,12 @@ const DependencyManager = () => {
                 style={selectStyle}
               >
                 {Object.entries(linkTypes).map(([key, val]) => (
-                  <option key={key} value={key}>{val.icon} {val.name} - {val.desc}</option>
+                  <option key={key} value={key}>{val.icon} {val.name} — {val.desc}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label style={{ fontSize: '12px', color: isDark ? '#94a3b8' : '#64748b', display: 'block', marginBottom: '4px' }}>
+              <label style={{ fontSize: '12px', color: isDark ? '#94a3b8' : '#64748b', display: 'block', marginBottom: '4px', fontWeight: '600' }}>
                 Задержка (дни)
               </label>
               <input
@@ -606,9 +620,19 @@ const DependencyManager = () => {
                 style={{ ...selectStyle, width: '100px' }}
               />
             </div>
-            <div style={{ marginTop: '20px', color: isDark ? '#60a5fa' : '#2563eb', fontSize: '14px' }}>
-              👆 Теперь кликните на задачу-последователя
-            </div>
+            {selectedPredecessor && (
+              <div style={{
+                padding: '10px 16px',
+                borderRadius: '8px',
+                backgroundColor: isDark ? 'rgba(59, 130, 246, 0.2)' : 'rgba(59, 130, 246, 0.1)',
+                border: `1px solid ${isDark ? '#3b82f6' : '#60a5fa'}`,
+                color: isDark ? '#60a5fa' : '#2563eb',
+                fontSize: '14px',
+                fontWeight: 500
+              }}>
+                👆 Кликните задачу-последователя в списке слева
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -675,9 +699,13 @@ const DependencyManager = () => {
                   key={schedule.id}
                   style={taskCardStyle(schedule, isSelected, isCritical)}
                   onClick={() => {
-                    if (isCreatingLink && selectedPredecessor && selectedPredecessor.id !== schedule.id) {
-                      createDependency(schedule.id);
-                    } else if (!isCreatingLink) {
+                    if (isCreatingLink) {
+                      if (selectedPredecessor && selectedPredecessor.id !== schedule.id) {
+                        createDependency(schedule.id);
+                      } else if (!selectedPredecessor) {
+                        setSelectedPredecessor(schedule);
+                      }
+                    } else {
                       setSelectedPredecessor(schedule);
                       setIsCreatingLink(true);
                     }

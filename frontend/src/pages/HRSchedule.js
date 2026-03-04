@@ -9,10 +9,12 @@ import ScheduleToolbar from '../components/ScheduleToolbar';
 import QuickDatePicker from '../components/QuickDatePicker';
 import RowActions from '../components/RowActions';
 import StatusBadge from '../components/StatusBadge';
-import AddRowButton, { AddRowButtonCompact } from '../components/AddRowButton';
+// eslint-disable-next-line no-unused-vars -- используем только AddRowButtonCompact
+import { AddRowButtonCompact } from '../components/AddRowButton';
 import { saveScheduleOrder, applyScheduleOrder } from '../utils/scheduleOrderStorage';
 import { saveSelectedCity, getSelectedCity, saveViewMode, getViewMode } from '../utils/userPreferences';
 import { validateDates, prepareRowForCopy } from '../utils/scheduleHelpers';
+import { createScheduleUpdateHandler } from '../utils/scheduleUpdateWithCascade';
 
 // Колонки для экспорта
 const EXPORT_COLUMNS = [
@@ -43,7 +45,7 @@ const HRSchedule = () => {
   const { showSuccess, showError, showWarning } = useToast();
 
   const canEdit = user?.role !== 'director' && 
-    (user?.role === 'admin' || user?.department === 'HR отдел');
+    (user?.role === 'admin' || user?.department === 'hr');
 
   useEffect(() => {
     fetchCities();
@@ -130,36 +132,9 @@ const HRSchedule = () => {
   // Обработчик обновления дат из диаграммы Ганта
   // Важно: НЕ обновляем schedules здесь - ModernGanttChart сам управляет UI
   // Это предотвращает конфликт состояний и бесконечные циклы
-  const handleScheduleUpdate = async (scheduleId, updates) => {
-    try {
-      // БАГ-ФИХ: Добавлен таймаут 8 секунд для предотвращения зависания
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-      
-      await client.put(`/schedules/${scheduleId}`, updates, {
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      // БАГ-ФИХ: Обновляем локальный state после успешного сохранения
-      // Это предотвращает визуальный возврат блока на старое место
-      setSchedules(prev => prev.map(schedule => 
-        schedule.id === scheduleId 
-          ? { ...schedule, ...updates }
-          : schedule
-      ));
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        console.error('Таймаут запроса сохранения');
-        showError('Превышено время ожидания сохранения');
-      } else {
-        console.error('Error updating schedule:', error);
-        showError('Ошибка при обновлении дат');
-      }
-      throw error; // Пробрасываем ошибку чтобы ModernGanttChart мог откатить UI
-    }
-  };
+  const handleScheduleUpdate = createScheduleUpdateHandler({
+    fetchSchedules, showError, cityId: selectedCity
+  });
 
   const handleCityChange = (cityId) => {
     setSelectedCity(cityId);
@@ -548,28 +523,30 @@ const HRSchedule = () => {
       </div>
 
       {!showCalendar && (
-        <>
-          <ScheduleFilters
-            stages={stages}
-            selectedStage={filterStage}
-            onStageChange={setFilterStage}
-            searchText={searchText}
-            onSearchChange={setSearchText}
-            showOnlyDelayed={showOnlyDelayed}
-            onDelayedChange={setShowOnlyDelayed}
-          />
-          
-          {canEdit && (
-            <ScheduleToolbar
-              onAddRow={addNewRow}
-              schedules={filteredSchedules}
-              columns={EXPORT_COLUMNS}
-              scheduleType="hr"
-              cityName={cities.find(c => c.id === selectedCity)?.name || 'HR'}
-            />
-          )}
-        </>
+        <ScheduleFilters
+          stages={stages}
+          selectedStage={filterStage}
+          onStageChange={setFilterStage}
+          searchText={searchText}
+          onSearchChange={setSearchText}
+          showOnlyDelayed={showOnlyDelayed}
+          onDelayedChange={setShowOnlyDelayed}
+        />
       )}
+
+      <ScheduleToolbar
+        schedules={filteredSchedules}
+        columns={EXPORT_COLUMNS}
+        filename="hr_schedule"
+        onAddRow={canEdit ? addNewRow : null}
+        onRefresh={fetchSchedules}
+        canEdit={canEdit}
+        scheduleType="hr"
+        cities={cities}
+        selectedCity={selectedCity}
+        showCalendar={showCalendar}
+        onToggleCalendar={toggleViewMode}
+      />
 
       {showCalendar ? (
         <div className="card-full-width">

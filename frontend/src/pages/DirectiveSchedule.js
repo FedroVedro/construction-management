@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ModernGanttChart from '../components/Dashboard/ModernGanttChart';
 import client from '../api/client';
 import { useToast } from '../context/ToastContext';
+import { createScheduleUpdateHandler } from '../utils/scheduleUpdateWithCascade';
 
 const DirectiveSchedule = () => {
   const [cities, setCities] = useState([]);
@@ -42,38 +43,9 @@ const DirectiveSchedule = () => {
     }
   };
 
-  // Обработчик обновления дат из диаграммы Ганта
-  // Важно: НЕ обновляем schedules здесь - ModernGanttChart сам управляет UI
-  const handleScheduleUpdate = async (scheduleId, updates) => {
-    try {
-      // БАГ-ФИХ: Добавлен таймаут 8 секунд для предотвращения зависания
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-      
-      await client.put(`/schedules/${scheduleId}`, updates, {
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      // БАГ-ФИХ: Обновляем локальный state после успешного сохранения
-      // Это предотвращает визуальный возврат блока на старое место
-      setSchedules(prev => prev.map(schedule => 
-        schedule.id === scheduleId 
-          ? { ...schedule, ...updates }
-          : schedule
-      ));
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        console.error('Таймаут запроса сохранения');
-        showError('Превышено время ожидания сохранения');
-      } else {
-        console.error('Error updating schedule:', error);
-        showError('Ошибка при обновлении дат');
-      }
-      throw error;
-    }
-  };
+  const handleScheduleUpdate = createScheduleUpdateHandler({
+    fetchSchedules, showError, cityId: selectedCity
+  });
 
   return (
     <div className="container-fluid">

@@ -18,7 +18,9 @@ const PAGE_NAMES = {
   'admin': 'Админ-панель',
   'strategic-map': 'Мастер-карта',
   'process-management': 'Процесс управления',
-  'dependency-manager': 'Зависимости задач'
+  'dependency-manager': 'Зависимости задач',
+  'preconstruction-schedule': 'График ТЗ',
+  'directive-schedule': 'Директивный график'
 };
 
 const Breadcrumbs = () => {
@@ -95,7 +97,9 @@ const getPageIcon = (path) => {
     'admin': '👑',
     'strategic-map': '🗺️',
     'process-management': '⚙️',
-    'dependency-manager': '🔗'
+    'dependency-manager': '🔗',
+    'preconstruction-schedule': '📋',
+    'directive-schedule': '📊'
   };
   return icons[path] || '📌';
 };

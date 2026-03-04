@@ -100,13 +100,14 @@ def delete_user(
 def get_departments(
     current_user: models.User = Depends(auth.check_admin_role)
 ):
-    """Список доступных отделов"""
+    """Список доступных отделов (id используется в маппинге schedule_type)"""
     return [
-        {"id": "hr", "name": "HR", "icon": "👥"},
-        {"id": "construction", "name": "Строительство", "icon": "🔨"},
-        {"id": "document", "name": "Тех. заказчик", "icon": "📄"},
-        {"id": "procurement", "name": "Закупки", "icon": "🛒"},
-        {"id": "marketing", "name": "Маркетинг", "icon": "📢"},
+        {"id": "hr", "name": "HR отдел", "icon": "👥"},
+        {"id": "construction", "name": "Строительный отдел", "icon": "🔨"},
+        {"id": "document", "name": "Отдел документации", "icon": "📄"},
+        {"id": "procurement", "name": "Отдел закупок", "icon": "🛒"},
+        {"id": "marketing", "name": "Отдел маркетинга", "icon": "📢"},
+        {"id": "preconstruction", "name": "ТЗ отдел", "icon": "📋"},
         {"id": "project_office", "name": "Проектный офис", "icon": "📁"},
     ]
 
@@ -122,6 +123,8 @@ def get_available_permissions(
         {"id": "document", "name": "График документации", "icon": "📄"},
         {"id": "procurement", "name": "График закупок", "icon": "🛒"},
         {"id": "marketing", "name": "График маркетинга", "icon": "📢"},
+        {"id": "preconstruction", "name": "График ТЗ", "icon": "📋"},
+        {"id": "directive", "name": "Директивный график", "icon": "📊"},
         {"id": "project_office", "name": "Проектный офис", "icon": "📁"},
         {"id": "strategic_map", "name": "Мастер-карта", "icon": "🗺️"},
         {"id": "cities", "name": "Объекты строительства", "icon": "🏗️"},

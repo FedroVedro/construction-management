@@ -6,12 +6,22 @@ from .. import crud, models, schemas, database, auth
 
 router = APIRouter()
 
-# Маппинг отделов к типам графиков
+# Маппинг отделов (id из /users/departments/list) к типам графиков
+# Поддержка id и старых русских названий для обратной совместимости
 DEPARTMENT_SCHEDULE_MAPPING = {
+    "document": "document",
+    "hr": "hr",
+    "procurement": "procurement",
+    "construction": "construction",
+    "marketing": "marketing",
+    "preconstruction": "preconstruction",
+    # Обратная совместимость со старыми значениями
     "Отдел документации": "document",
     "HR отдел": "hr",
     "Отдел закупок": "procurement",
-    "Строительный отдел": "construction"
+    "Строительный отдел": "construction",
+    "Отдел маркетинга": "marketing",
+    "ТЗ отдел": "preconstruction",
 }
 
 def check_department_permission(user: models.User, schedule_type: str):

@@ -10,6 +10,7 @@ const RowActions = ({
   onMoveDown,
   onInsertAbove,
   onInsertBelow,
+  onHide,
   canMoveUp = true,
   canMoveDown = true,
   isNew = false
@@ -135,6 +136,17 @@ const RowActions = ({
                 label="Вставить ниже"
                 onClick={() => {
                   onInsertBelow();
+                  setShowMenu(false);
+                }}
+              />
+            )}
+
+            {onHide && (
+              <ActionMenuItem
+                icon="👁‍🗨"
+                label="Скрыть строку"
+                onClick={() => {
+                  onHide();
                   setShowMenu(false);
                 }}
               />

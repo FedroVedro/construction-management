@@ -13,9 +13,12 @@ import { AddRowButtonCompact } from '../components/AddRowButton';
 import { saveScheduleOrder, applyScheduleOrder } from '../utils/scheduleOrderStorage';
 import { saveSelectedCity, getSelectedCity, saveViewMode, getViewMode } from '../utils/userPreferences';
 import { validateDates, prepareRowForCopy } from '../utils/scheduleHelpers';
+import { createScheduleUpdateHandler } from '../utils/scheduleUpdateWithCascade';
 
 // Колонки для экспорта
 const EXPORT_COLUMNS = [
+  { field: 'sections', label: 'Этап строительства (СМР)', type: 'text' },
+  { field: 'vacancy', label: 'Наименование работ (СМР)', type: 'text' },
   { field: 'construction_stage', label: 'Этап строительства', type: 'text' },
   { field: 'work_name', label: 'Наименование работ', type: 'text' },
   { field: 'service', label: 'Служба', type: 'text' },
@@ -40,11 +43,12 @@ const ProcurementSchedule = () => {
   const [showOnlyDelayed, setShowOnlyDelayed] = useState(false);
   const [stages, setStages] = useState([]);
   const [dateErrors, setDateErrors] = useState({});
+  const [importLoading, setImportLoading] = useState(false);
   const { user } = useAuth();
   const { showSuccess, showError, showInfo, showWarning } = useToast();
 
   const canEdit = user?.role !== 'director' && 
-    (user?.role === 'admin' || user?.department === 'Отдел закупок');
+    (user?.role === 'admin' || user?.department === 'procurement');
 
   useEffect(() => {
     fetchCities();
@@ -118,38 +122,9 @@ const ProcurementSchedule = () => {
     }
   };
 
-  // Обработчик обновления дат из диаграммы Ганта
-  // Важно: НЕ обновляем schedules здесь - ModernGanttChart сам управляет UI
-  const handleScheduleUpdate = async (scheduleId, updates) => {
-    try {
-      // БАГ-ФИХ: Добавлен таймаут 8 секунд для предотвращения зависания
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-      
-      await client.put(`/schedules/${scheduleId}`, updates, {
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      // БАГ-ФИХ: Обновляем локальный state после успешного сохранения
-      // Это предотвращает визуальный возврат блока на старое место
-      setSchedules(prev => prev.map(schedule => 
-        schedule.id === scheduleId 
-          ? { ...schedule, ...updates }
-          : schedule
-      ));
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        console.error('Таймаут запроса сохранения');
-        showError('Превышено время ожидания сохранения');
-      } else {
-        console.error('Error updating schedule:', error);
-        showError('Ошибка при обновлении дат');
-      }
-      throw error;
-    }
-  };
+  const handleScheduleUpdate = createScheduleUpdateHandler({
+    fetchSchedules, showError, cityId: selectedCity
+  });
 
   const handleCityChange = (cityId) => {
     setSelectedCity(cityId);
@@ -224,6 +199,8 @@ const ProcurementSchedule = () => {
             construction_stage: schedule.construction_stage.trim(),
             planned_start_date: schedule.planned_start_date,
             planned_end_date: schedule.planned_end_date,
+            ...(schedule.sections && { sections: schedule.sections.trim() }),
+            ...(schedule.vacancy && { vacancy: schedule.vacancy.trim() }),
             ...(schedule.work_name && { work_name: schedule.work_name.trim() }),
             ...(schedule.service && { service: schedule.service.trim() }),
             ...(schedule.responsible_employee && { responsible_employee: schedule.responsible_employee.trim() }),
@@ -265,9 +242,11 @@ const ProcurementSchedule = () => {
     }
     
     const newRow = {
-      id: `new-${Date.now()}`,
+      id: `new-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       schedule_type: 'procurement',
       city_id: selectedCity,
+      sections: '',
+      vacancy: '',
       construction_stage: '',
       work_name: '',
       service: '',
@@ -327,6 +306,116 @@ const ProcurementSchedule = () => {
     
     setSchedules(newSchedules);
     saveScheduleOrder(selectedCity, 'procurement', newSchedules);
+  };
+
+  const insertRowAt = (index, position) => {
+    if (!selectedCity) { showInfo('Пожалуйста, выберите город'); return; }
+    const filtered = getFilteredSchedules();
+    const targetSchedule = filtered[index];
+    const realIndex = schedules.findIndex(s => s.id === targetSchedule.id);
+    const insertIndex = position === 'above' ? realIndex : realIndex + 1;
+
+    const newRow = {
+      id: `new-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      schedule_type: 'procurement',
+      city_id: selectedCity,
+      sections: '',
+      vacancy: '',
+      construction_stage: '',
+      work_name: '',
+      service: '',
+      responsible_employee: '',
+      contractor: '',
+      planned_start_date: '',
+      planned_end_date: '',
+      actual_start_date: null,
+      actual_end_date: null,
+      isNew: true
+    };
+
+    const newSchedules = [...schedules];
+    newSchedules.splice(insertIndex, 0, newRow);
+    setSchedules(newSchedules);
+    saveScheduleOrder(selectedCity, 'procurement', newSchedules);
+  };
+
+  const deleteAllForCity = async () => {
+    if (!selectedCity) { showInfo('Пожалуйста, выберите город'); return; }
+    const cityName = cities.find(c => c.id === selectedCity)?.name || 'выбранного объекта';
+    const count = schedules.filter(s => !s.id.toString().startsWith('new-')).length;
+    const unsavedCount = schedules.filter(s => s.id.toString().startsWith('new-')).length;
+    const total = count + unsavedCount;
+    if (total === 0) { showInfo('Нет данных для удаления'); return; }
+
+    if (!window.confirm(`Вы собираетесь удалить ВСЕ ${total} строк для объекта "${cityName}".\n\nПродолжить?`)) return;
+    if (!window.confirm(`ВНИМАНИЕ! Это действие необратимо.\nБудет удалено ${total} записей.\n\nВы уверены?`)) return;
+    const confirmText = window.prompt('Для подтверждения удаления введите "УДАЛИТЬ":');
+    if (confirmText !== 'УДАЛИТЬ') { showInfo('Удаление отменено'); return; }
+
+    try {
+      const savedIds = schedules.filter(s => !s.id.toString().startsWith('new-')).map(s => s.id);
+      for (const id of savedIds) {
+        await client.delete(`/schedules/${id}`);
+      }
+      setSchedules([]);
+      setUnsavedRows(prev => ({ ...prev, [selectedCity]: [] }));
+      showSuccess(`Удалено ${total} записей для объекта "${cityName}"`);
+    } catch (error) {
+      showError('Ошибка при удалении');
+      fetchSchedules();
+    }
+  };
+
+  const shiftDate = (dateStr, days) => {
+    if (!dateStr) return null;
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return null;
+    d.setDate(d.getDate() - days);
+    return d.toISOString().split('T')[0];
+  };
+
+  const importFromConstruction = async (offsetDays = 0) => {
+    if (!selectedCity) { showInfo('Пожалуйста, выберите город'); return; }
+    if (schedules.length > 0) {
+      if (!window.confirm('В таблице уже есть данные. Импорт добавит строки из графика строительства в конец. Продолжить?')) return;
+    }
+
+    setImportLoading(true);
+    try {
+      const response = await client.get('/schedules', {
+        params: { schedule_type: 'construction', city_id: selectedCity }
+      });
+      const constructionData = response.data;
+
+      if (constructionData.length === 0) {
+        showInfo('В графике строительства нет данных для этого объекта');
+        return;
+      }
+
+      const batchData = constructionData.map(item => ({
+        schedule_type: 'procurement',
+        city_id: parseInt(selectedCity),
+        sections: item.construction_stage || '',
+        vacancy: item.work_name || '',
+        construction_stage: item.construction_stage || '',
+        planned_start_date: offsetDays > 0 ? shiftDate(item.planned_start_date, offsetDays) : null,
+        planned_end_date: offsetDays > 0 ? shiftDate(item.planned_end_date, offsetDays) : null,
+      }));
+
+      const batchSize = 50;
+      for (let i = 0; i < batchData.length; i += batchSize) {
+        await client.post('/schedules/batch', batchData.slice(i, i + batchSize));
+      }
+
+      const label = offsetDays > 0 ? ` (даты сдвинуты на ${offsetDays} дн. раньше)` : '';
+      showSuccess(`Импортировано ${batchData.length} строк из графика строительства${label}`);
+      await fetchSchedules();
+    } catch (error) {
+      console.error('Import error:', error);
+      showError('Ошибка при импорте из графика строительства');
+    } finally {
+      setImportLoading(false);
+    }
   };
 
   const renderCell = (schedule, field, value) => {
@@ -478,6 +567,60 @@ const ProcurementSchedule = () => {
         onToggleCalendar={handleViewModeChange}
       />
 
+      {canEdit && !showCalendar && (
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '12px', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => importFromConstruction(0)}
+            disabled={importLoading}
+            style={{
+              padding: '8px 14px', border: 'none', borderRadius: '6px',
+              background: '#28a745', color: '#fff', fontSize: '13px', fontWeight: '600',
+              cursor: importLoading ? 'wait' : 'pointer', opacity: importLoading ? 0.7 : 1,
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {importLoading ? 'Загрузка...' : 'Перенести из графика строительства (без дат)'}
+          </button>
+          <button
+            onClick={() => importFromConstruction(30)}
+            disabled={importLoading}
+            style={{
+              padding: '8px 14px', border: 'none', borderRadius: '6px',
+              background: '#007bff', color: '#fff', fontSize: '13px', fontWeight: '600',
+              cursor: importLoading ? 'wait' : 'pointer', opacity: importLoading ? 0.7 : 1,
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Перенести (на 1 мес. раньше)
+          </button>
+          <button
+            onClick={() => importFromConstruction(45)}
+            disabled={importLoading}
+            style={{
+              padding: '8px 14px', border: 'none', borderRadius: '6px',
+              background: '#6f42c1', color: '#fff', fontSize: '13px', fontWeight: '600',
+              cursor: importLoading ? 'wait' : 'pointer', opacity: importLoading ? 0.7 : 1,
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Перенести (на 1.5 мес. раньше)
+          </button>
+          {schedules.length > 0 && (
+            <button
+              onClick={deleteAllForCity}
+              disabled={importLoading}
+              style={{
+                padding: '8px 14px', border: 'none', borderRadius: '6px',
+                background: '#dc3545', color: '#fff', fontSize: '13px', fontWeight: '600',
+                cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: 'auto'
+              }}
+            >
+              Удалить всё
+            </button>
+          )}
+        </div>
+      )}
+
       {!showCalendar && (
         <ScheduleFilters
           stages={stages}
@@ -503,6 +646,8 @@ const ProcurementSchedule = () => {
                   <tr>
                     <th style={{ width: '50px', border: '1px solid var(--border-color)', padding: '8px' }}>№</th>
                     {canEdit && <th style={{ width: '90px', border: '1px solid var(--border-color)', padding: '8px' }}>Действия</th>}
+                    <th style={{ minWidth: '180px', border: '1px solid var(--border-color)', padding: '8px', background: '#e8f5e9' }}>Этап строительства (СМР)</th>
+                    <th style={{ minWidth: '200px', border: '1px solid var(--border-color)', padding: '8px', background: '#e8f5e9' }}>Наименование работ (СМР)</th>
                     <th style={{ minWidth: '180px', border: '1px solid var(--border-color)', padding: '8px' }}>Этап строительства</th>
                     <th style={{ minWidth: '200px', border: '1px solid var(--border-color)', padding: '8px' }}>Наименование работ</th>
                     <th style={{ minWidth: '120px', border: '1px solid var(--border-color)', padding: '8px' }}>Служба</th>
@@ -532,11 +677,19 @@ const ProcurementSchedule = () => {
                               onDelete={() => deleteRow(schedule.id)}
                               onMoveUp={() => moveRow(index, index - 1)}
                               onMoveDown={() => moveRow(index, index + 1)}
+                              onInsertAbove={() => insertRowAt(index, 'above')}
+                              onInsertBelow={() => insertRowAt(index, 'below')}
                               canMoveUp={index > 0}
                               canMoveDown={index < filteredSchedules.length - 1}
                             />
                           </td>
                         )}
+                        <td style={{ border: '1px solid var(--border-color)', padding: '8px', background: 'var(--table-stripe)', color: 'var(--text-muted)', fontSize: '13px' }}>
+                          {schedule.sections || '—'}
+                        </td>
+                        <td style={{ border: '1px solid var(--border-color)', padding: '8px', background: 'var(--table-stripe)', color: 'var(--text-muted)', fontSize: '13px' }}>
+                          {schedule.vacancy || '—'}
+                        </td>
                         <td style={{ border: '1px solid var(--border-color)', padding: '8px' }}>{renderCell(schedule, 'construction_stage', schedule.construction_stage)}</td>
                         <td style={{ border: '1px solid var(--border-color)', padding: '8px' }}>{renderCell(schedule, 'work_name', schedule.work_name)}</td>
                         <td style={{ border: '1px solid var(--border-color)', padding: '8px' }}>{renderCell(schedule, 'service', schedule.service)}</td>
@@ -553,13 +706,24 @@ const ProcurementSchedule = () => {
                   })}
                   {filteredSchedules.length === 0 && (
                     <tr>
-                      <td colSpan={canEdit ? 13 : 12} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                      <td colSpan={canEdit ? 15 : 14} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                         <div style={{ fontSize: '48px', marginBottom: '16px' }}>🛒</div>
                         <div>Нет данных для отображения</div>
                         {canEdit && (
-                          <button onClick={addNewRow} className="btn btn-primary" style={{ marginTop: '16px' }}>
-                            + Добавить первую строку
-                          </button>
+                          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '16px', flexWrap: 'wrap' }}>
+                            <button onClick={() => importFromConstruction(0)} className="btn btn-primary" disabled={importLoading}>
+                              {importLoading ? 'Загрузка...' : 'Перенести (без дат)'}
+                            </button>
+                            <button onClick={() => importFromConstruction(30)} className="btn btn-primary" disabled={importLoading}>
+                              Перенести (на 1 мес. раньше)
+                            </button>
+                            <button onClick={() => importFromConstruction(45)} className="btn btn-primary" disabled={importLoading}>
+                              Перенести (на 1.5 мес. раньше)
+                            </button>
+                            <button onClick={addNewRow} className="btn btn-secondary">
+                              + Добавить строку
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -568,7 +732,7 @@ const ProcurementSchedule = () => {
                   {filteredSchedules.length > 0 && canEdit && (
                     <AddRowButtonCompact 
                       onClick={addNewRow} 
-                      colSpan={13}
+                      colSpan={15}
                     />
                   )}
                 </tbody>

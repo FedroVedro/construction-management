@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -251,7 +252,7 @@ const AdminPanel = () => {
             Админ-панель
           </h1>
           <p style={{ color: 'var(--text-muted)', margin: 0 }}>
-            Управление пользователями и разрешениями
+            Управление пользователями, отделами и разрешениями на страницы
           </p>
         </div>
         
@@ -297,11 +298,47 @@ const AdminPanel = () => {
           color="#dc3545"
         />
         <StatCard 
+          icon="📋" 
+          label="Директоров" 
+          value={users.filter(u => u.role === 'director').length} 
+          color="#0d6efd"
+        />
+        <StatCard 
           icon="🏢" 
           label="Отделов" 
           value={departments.length} 
           color="#6f42c1"
         />
+        <StatCard 
+          icon="🔐" 
+          label="Страниц в разрешениях" 
+          value={availablePermissions.length} 
+          color="#20c997"
+        />
+      </div>
+
+      {/* Быстрые ссылки на нововведения */}
+      <div className="card" style={{ marginBottom: '24px' }}>
+        <h3 style={{ marginBottom: '16px' }}>⚡ Разделы системы</h3>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <AdminQuickLink to="/" icon="📊" text="Панель управления" />
+          <AdminQuickLink to="/strategic-map" icon="🗺️" text="Мастер-карта" />
+          <AdminQuickLink to="/process-management" icon="📋" text="Процесс управления" />
+          <AdminQuickLink to="/dependency-manager" icon="🔗" text="Зависимости" />
+          <AdminQuickLink to="/document-schedule" icon="📄" text="График документации" />
+          <AdminQuickLink to="/hr-schedule" icon="👥" text="HR-график" />
+          <AdminQuickLink to="/procurement-schedule" icon="🛒" text="График закупок" />
+          <AdminQuickLink to="/construction-schedule" icon="🔨" text="График строительства" />
+          <AdminQuickLink to="/directive-schedule" icon="📊" text="Директивный график" />
+          <AdminQuickLink to="/marketing-schedule" icon="📢" text="График маркетинга" />
+          <AdminQuickLink to="/preconstruction-schedule" icon="📋" text="График ТЗ" />
+          <AdminQuickLink to="/project-office" icon="📁" text="Проектный офис" />
+          <AdminQuickLink to="/cities" icon="🏗️" text="Объекты" />
+          <AdminQuickLink to="/construction-stages" icon="📋" text="Этапы" />
+          {currentUser?.role === 'admin' && (
+            <AdminQuickLink to="/telegram-settings" icon="📱" text="Telegram" />
+          )}
+        </div>
       </div>
 
       {/* Таблица пользователей */}
@@ -686,6 +723,37 @@ const AdminPanel = () => {
     </div>
   );
 };
+
+// Компонент быстрой ссылки
+const AdminQuickLink = ({ to, icon, text }) => (
+  <Link
+    to={to}
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      padding: '8px 14px',
+      backgroundColor: 'var(--bg-secondary)',
+      border: '1px solid var(--border-color)',
+      borderRadius: '8px',
+      color: 'var(--text-primary)',
+      textDecoration: 'none',
+      fontSize: '13px',
+      transition: 'all 0.2s ease'
+    }}
+    onMouseEnter={(e) => {
+      e.currentTarget.style.backgroundColor = 'var(--table-hover)';
+      e.currentTarget.style.borderColor = '#007bff';
+    }}
+    onMouseLeave={(e) => {
+      e.currentTarget.style.backgroundColor = 'var(--bg-secondary)';
+      e.currentTarget.style.borderColor = 'var(--border-color)';
+    }}
+  >
+    <span style={{ fontSize: '16px' }}>{icon}</span>
+    <span>{text}</span>
+  </Link>
+);
 
 // Компонент статистики
 const StatCard = ({ icon, label, value, color }) => (

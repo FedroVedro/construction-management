@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import MasterCard from '../components/Dashboard/MasterCard';
+import ExecutiveDashboard from '../components/Dashboard/ExecutiveDashboard';
+import AlertsPanel from '../components/Dashboard/AlertsPanel';
+import ObjectComparison from '../components/Dashboard/ObjectComparison';
+import ExportDashboardButton from '../components/Dashboard/ExportDashboardButton';
 import ModernGanttChart from '../components/Dashboard/ModernGanttChart';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { saveSelectedCity, getSelectedCity } from '../utils/userPreferences';
+import { createScheduleUpdateHandler } from '../utils/scheduleUpdateWithCascade';
 
 const Home = () => {
   const [cities, setCities] = useState([]);
@@ -39,39 +44,6 @@ const Home = () => {
     }
   };
 
-  // Обработчик обновления дат из диаграммы Ганта
-  // Важно: НЕ обновляем schedules здесь - ModernGanttChart сам управляет UI
-  const handleScheduleUpdate = async (scheduleId, updates) => {
-    try {
-      // БАГ-ФИХ: Добавлен таймаут 8 секунд для предотвращения зависания
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-      
-      await client.put(`/schedules/${scheduleId}`, updates, {
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      // БАГ-ФИХ: Обновляем локальный state после успешного сохранения
-      // Это предотвращает визуальный возврат блока на старое место
-      setSchedules(prev => prev.map(schedule => 
-        schedule.id === scheduleId 
-          ? { ...schedule, ...updates }
-          : schedule
-      ));
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        console.error('Таймаут запроса сохранения');
-        showError('Превышено время ожидания сохранения');
-      } else {
-        console.error('Error updating schedule:', error);
-        showError('Ошибка при обновлении дат');
-      }
-      throw error;
-    }
-  };
-
   const fetchSchedules = async () => {
     try {
       setLoading(true);
@@ -85,6 +57,13 @@ const Home = () => {
       setLoading(false);
     }
   };
+
+  // Обработчик обновления дат из диаграммы Ганта (с каскадом для связанных задач)
+  const handleScheduleUpdate = createScheduleUpdateHandler({
+    fetchSchedules,
+    showError,
+    cityId: selectedCity
+  });
 
   const handleCityChange = (value) => {
     const cityId = value || null;
@@ -100,7 +79,9 @@ const Home = () => {
         display: 'flex', 
         alignItems: 'center', 
         justifyContent: 'space-between',
-        marginBottom: '20px'
+        marginBottom: '20px',
+        flexWrap: 'wrap',
+        gap: '12px'
       }}>
         <div>
           <h1 style={{ marginBottom: '5px' }}>Панель управления</h1>
@@ -118,6 +99,9 @@ const Home = () => {
             </span>
           </p>
         </div>
+        {(user?.role === 'admin' || user?.role === 'director') && (
+          <ExportDashboardButton cityId={selectedCity} />
+        )}
       </div>
       
       <div className="card" style={{ maxWidth: '600px' }}>
@@ -140,7 +124,15 @@ const Home = () => {
       </div>
 
       <MasterCard cityId={selectedCity} />
-      
+
+      {(user?.role === 'admin' || user?.role === 'director') && (
+        <>
+          <ExecutiveDashboard cityId={selectedCity} />
+          <AlertsPanel cityId={selectedCity} />
+          <ObjectComparison />
+        </>
+      )}
+
       {(user?.role === 'admin' || user?.role === 'director') && (
         <div className="card-full-width">
           {loading ? (
@@ -159,7 +151,7 @@ const Home = () => {
             <ModernGanttChart 
               schedules={schedules} 
               cities={cities} 
-              onScheduleUpdate={handleScheduleUpdate}
+              onScheduleUpdate={user?.role === 'director' ? undefined : handleScheduleUpdate}
             />
           )}
         </div>

@@ -3,35 +3,23 @@ import client from '../api/client';
 
 const AuthContext = createContext(null);
 
-// Безопасный парсинг JSON из localStorage (защита от crash при corrupted data)
-const safeJsonParse = (key) => {
-  try {
-    const item = localStorage.getItem(key);
-    if (!item) return null;
-    return JSON.parse(item);
-  } catch (error) {
-    console.error(`Error parsing ${key} from localStorage:`, error);
-    // Очищаем повреждённые данные
-    localStorage.removeItem(key);
-    return null;
-  }
-};
-
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Проверяем сессию при загрузке — httpOnly cookie отправляется автоматически
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    const userData = safeJsonParse('user');
-    
-    if (token && userData) {
-      setUser(userData);
-    } else if (token && !userData) {
-      // Токен есть, но данные пользователя повреждены - очищаем всё
-      localStorage.removeItem('token');
-    }
-    setLoading(false);
+    const checkSession = async () => {
+      try {
+        const response = await client.get('/auth/me');
+        setUser(response.data);
+      } catch {
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+    checkSession();
   }, []);
 
   const login = useCallback(async (username, password) => {
@@ -39,26 +27,18 @@ export const AuthProvider = ({ children }) => {
     formData.append('username', username);
     formData.append('password', password);
 
-    try {
-      const response = await client.post('/auth/login', formData);
-      const { access_token, user: userData } = response.data;
-      
-      localStorage.setItem('token', access_token);
-      localStorage.setItem('user', JSON.stringify(userData));
-      setUser(userData);
-      
-      return response.data;
-    } catch (error) {
-      // Очищаем старые данные при ошибке логина
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      throw error;
-    }
+    const response = await client.post('/auth/login', formData);
+    const { user: userData } = response.data;
+    setUser(userData);
+    return response.data;
   }, []);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+  const logout = useCallback(async () => {
+    try {
+      await client.post('/auth/logout');
+    } catch {
+      // игнорируем ошибки при выходе
+    }
     setUser(null);
   }, []);
 

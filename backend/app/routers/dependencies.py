@@ -601,8 +601,11 @@ def calculate_critical_path(nodes: List[dict], edges: List[dict]) -> List[int]:
 class CascadeUpdateRequest(schemas.BaseModel):
     """Запрос на каскадное обновление"""
     schedule_id: int
-    planned_start_date: str
-    planned_end_date: str
+    planned_start_date: Optional[str] = None
+    planned_end_date: Optional[str] = None
+    actual_start_date: Optional[str] = None
+    actual_end_date: Optional[str] = None
+    use_actual_dates: bool = False
 
 
 class CascadeUpdateResult(schemas.BaseModel):
@@ -622,6 +625,7 @@ def cascade_update_schedule(
     
     При изменении дат задачи автоматически сдвигаются все 
     последующие задачи в соответствии с типами связей.
+    Поддерживает план (planned) и факт (actual).
     """
     from datetime import datetime, timedelta
     
@@ -630,26 +634,37 @@ def cascade_update_schedule(
     if not main_task:
         raise HTTPException(status_code=404, detail="Задача не найдена")
     
-    # Парсим даты
-    try:
-        new_start = datetime.fromisoformat(request.planned_start_date.replace('Z', '+00:00')).replace(tzinfo=None)
-        new_end = datetime.fromisoformat(request.planned_end_date.replace('Z', '+00:00')).replace(tzinfo=None)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Ошибка парсинга дат: {str(e)}")
-    
-    # Сохраняем старые даты для расчёта сдвига
-    old_start = main_task.planned_start_date
-    old_end = main_task.planned_end_date
+    use_actual = request.use_actual_dates and request.actual_start_date and request.actual_end_date
+    if use_actual:
+        try:
+            new_start = datetime.fromisoformat(request.actual_start_date.replace('Z', '+00:00')).replace(tzinfo=None)
+            new_end = datetime.fromisoformat(request.actual_end_date.replace('Z', '+00:00')).replace(tzinfo=None)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Ошибка парсинга дат: {str(e)}")
+    else:
+        if not request.planned_start_date or not request.planned_end_date:
+            raise HTTPException(status_code=400, detail="Нужны planned или actual даты")
+        try:
+            new_start = datetime.fromisoformat(request.planned_start_date.replace('Z', '+00:00')).replace(tzinfo=None)
+            new_end = datetime.fromisoformat(request.planned_end_date.replace('Z', '+00:00')).replace(tzinfo=None)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Ошибка парсинга дат: {str(e)}")
     
     # Обновляем главную задачу
-    main_task.planned_start_date = new_start
-    main_task.planned_end_date = new_end
+    if use_actual:
+        main_task.actual_start_date = new_start
+        main_task.actual_end_date = new_end
+    else:
+        main_task.planned_start_date = new_start
+        main_task.planned_end_date = new_end
     
     updated_tasks = [{
         "id": main_task.id,
         "name": main_task.work_name or main_task.vacancy or main_task.sections,
-        "planned_start_date": new_start.isoformat(),
-        "planned_end_date": new_end.isoformat(),
+        "planned_start_date": main_task.planned_start_date.isoformat() if main_task.planned_start_date else None,
+        "planned_end_date": main_task.planned_end_date.isoformat() if main_task.planned_end_date else None,
+        "actual_start_date": main_task.actual_start_date.isoformat() if main_task.actual_start_date else None,
+        "actual_end_date": main_task.actual_end_date.isoformat() if main_task.actual_end_date else None,
         "is_main": True
     }]
     
@@ -707,18 +722,34 @@ def cascade_update_schedule(
                     models.Schedule.id == successor_id
                 ).first()
                 
-                if not successor_task or not successor_task.planned_start_date:
+                if use_actual:
+                    pred_start = current_task.actual_start_date
+                    pred_end = current_task.actual_end_date
+                    succ_start = successor_task.actual_start_date
+                    succ_end = successor_task.actual_end_date
+                else:
+                    pred_start = current_task.planned_start_date
+                    pred_end = current_task.planned_end_date
+                    succ_start = successor_task.planned_start_date
+                    succ_end = successor_task.planned_end_date
+                
+                if not successor_task or not (pred_start and pred_end):
+                    continue
+                # Для successor без фактических дат - используем плановые
+                s_start = succ_start or successor_task.planned_start_date
+                s_end = succ_end or successor_task.planned_end_date
+                if not s_start:
                     continue
                 
-                # Рассчитываем длительность зависимой задачи
-                if successor_task.planned_end_date and successor_task.planned_start_date:
-                    duration = (successor_task.planned_end_date - successor_task.planned_start_date).days
+                # Длительность зависимой задачи
+                if s_end and s_start:
+                    duration = (s_end - s_start).days
                 else:
                     duration = 0
                 
                 # Рассчитываем новые даты в зависимости от типа связи
-                predecessor_start = current_task.planned_start_date
-                predecessor_end = current_task.planned_end_date
+                predecessor_start = pred_start
+                predecessor_end = pred_end
                 
                 if link_type == 'FS':  # Finish-to-Start
                     # Задача начинается после окончания предшественника + lag
@@ -743,22 +774,26 @@ def cascade_update_schedule(
                     new_successor_end = new_successor_start + timedelta(days=duration)
                 
                 # Проверяем, изменились ли даты
-                old_successor_start = successor_task.planned_start_date
-                old_successor_end = successor_task.planned_end_date
+                old_succ_start = s_start
+                old_succ_end = s_end or (s_start + timedelta(days=duration))
                 
-                # Обновляем только если новые даты позже текущих (сдвиг вперёд)
-                # или если явно требуется обновление (основная задача изменилась)
-                if (new_successor_start != old_successor_start or 
-                    new_successor_end != old_successor_end):
+                if (new_successor_start != old_succ_start or 
+                    new_successor_end != old_succ_end):
                     
-                    successor_task.planned_start_date = new_successor_start
-                    successor_task.planned_end_date = new_successor_end
+                    if use_actual:
+                        successor_task.actual_start_date = new_successor_start
+                        successor_task.actual_end_date = new_successor_end
+                    else:
+                        successor_task.planned_start_date = new_successor_start
+                        successor_task.planned_end_date = new_successor_end
                     
                     updated_tasks.append({
                         "id": successor_task.id,
                         "name": successor_task.work_name or successor_task.vacancy or successor_task.sections,
-                        "planned_start_date": new_successor_start.isoformat(),
-                        "planned_end_date": new_successor_end.isoformat(),
+                        "planned_start_date": successor_task.planned_start_date.isoformat() if successor_task.planned_start_date else None,
+                        "planned_end_date": successor_task.planned_end_date.isoformat() if successor_task.planned_end_date else None,
+                        "actual_start_date": successor_task.actual_start_date.isoformat() if successor_task.actual_start_date else None,
+                        "actual_end_date": successor_task.actual_end_date.isoformat() if successor_task.actual_end_date else None,
                         "is_main": False,
                         "link_type": link_type,
                         "predecessor_id": current_id
