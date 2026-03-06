@@ -24,9 +24,12 @@ client.interceptors.response.use(
     if (!error.response) {
       console.error('Network error:', error.message);
     }
-    if (error.response?.status === 401 && !isRedirecting) {
+    // Не редиректить при 401 от /auth/me — иначе бесконечная перезагрузка
+    // (AuthContext сам обработает и установит user = null, PrivateRoute перенаправит)
+    const isAuthCheck = error.config?.url?.includes('auth/me');
+    if (error.response?.status === 401 && !isAuthCheck && !isRedirecting) {
       isRedirecting = true;
-      window.location.href = '/login';
+      window.dispatchEvent(new CustomEvent('auth:session-expired'));
       setTimeout(() => { isRedirecting = false; }, 1000);
     }
     return Promise.reject(error);

@@ -22,12 +22,19 @@ export const AuthProvider = ({ children }) => {
     checkSession();
   }, []);
 
-  const login = useCallback(async (username, password) => {
-    const formData = new FormData();
-    formData.append('username', username);
-    formData.append('password', password);
+  // Обработка 401 от других запросов (истекла сессия) — без полной перезагрузки
+  useEffect(() => {
+    const onSessionExpired = () => setUser(null);
+    window.addEventListener('auth:session-expired', onSessionExpired);
+    return () => window.removeEventListener('auth:session-expired', onSessionExpired);
+  }, []);
 
-    const response = await client.post('/auth/login', formData);
+  const login = useCallback(async (username, password) => {
+    // JSON-эндпоинт надёжнее для кросс-доменных запросов
+    const response = await client.post('/auth/login-json', {
+      username,
+      password,
+    });
     const { user: userData } = response.data;
     setUser(userData);
     return response.data;

@@ -62,9 +62,14 @@ init_admin_user()
 
 app = FastAPI(title="Construction Management API")
 
+# CORS: localhost + IP в сети (для доступа с других устройств)
+import os
+_cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+CORS_ORIGINS = [o.strip() for o in _cors_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

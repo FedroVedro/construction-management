@@ -1,5 +1,6 @@
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -16,7 +17,7 @@ def _make_login_response(access_token: str, user: models.User):
     content = {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": user
+        "user": jsonable_encoder(user)
     }
     response = JSONResponse(content=content)
     response.set_cookie(
@@ -31,11 +32,11 @@ def _make_login_response(access_token: str, user: models.User):
     return response
 
 
-@router.post("/login-json", response_model=schemas.Token)
-def login_json(credentials: dict, db: Session = Depends(database.get_db)):
-    """Alternative login endpoint using JSON instead of form-data"""
-    username = credentials.get("username")
-    password = credentials.get("password")
+@router.post("/login-json")
+def login_json(credentials: schemas.UserLogin, db: Session = Depends(database.get_db)):
+    """Логин через JSON — для SPA и кросс-доменных запросов."""
+    username = credentials.username
+    password = credentials.password
     
     if not username or not password:
         raise HTTPException(
